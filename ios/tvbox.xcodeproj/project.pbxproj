@@ -6,7 +6,14 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		048E26DA2D9E37D900E35C68 /* Gemfile in Resources */ = {isa = PBXBuildFile; fileRef = 048E26D92D9E37D900E35C68 /* Gemfile */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
+		048E26D62D9E37A400E35C68 /* Appfile */ = {isa = PBXFileReference; lastKnownFileType = text; path = Appfile; sourceTree = "<group>"; };
+		048E26D72D9E37A400E35C68 /* Fastfile */ = {isa = PBXFileReference; lastKnownFileType = text; path = Fastfile; sourceTree = "<group>"; };
+		048E26D92D9E37D900E35C68 /* Gemfile */ = {isa = PBXFileReference; lastKnownFileType = text; path = Gemfile; sourceTree = "<group>"; };
 		04B74ED32D9DB54A006D111D /* tvbox.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = tvbox.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -29,11 +36,22 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		048E26D82D9E37A400E35C68 /* fastlane */ = {
+			isa = PBXGroup;
+			children = (
+				048E26D62D9E37A400E35C68 /* Appfile */,
+				048E26D72D9E37A400E35C68 /* Fastfile */,
+			);
+			path = fastlane;
+			sourceTree = SOURCE_ROOT;
+		};
 		04B74ECA2D9DB54A006D111D = {
 			isa = PBXGroup;
 			children = (
+				048E26D82D9E37A400E35C68 /* fastlane */,
 				04B74ED52D9DB54A006D111D /* tvbox */,
 				04B74ED42D9DB54A006D111D /* Products */,
+				048E26D92D9E37D900E35C68 /* Gemfile */,
 			);
 			sourceTree = "<group>";
 		};
@@ -109,6 +127,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				048E26DA2D9E37D900E35C68 /* Gemfile in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -251,6 +270,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 7PYQPUUYDQ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -278,6 +298,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 7PYQPUUYDQ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

@@ -15,12 +15,12 @@ struct MainView: View {
                     Label("首页", systemImage: "house.fill")
                 }
             
-            Text("搜索")
+            Text("直播")
                 .tabItem {
-                    Label("搜索", systemImage: "magnifyingglass")
+                    Label("直播", systemImage: "play.tv.fill")
                 }
             
-            Text("设置")
+            SettingsView()
                 .tabItem {
                     Label("设置", systemImage: "gear")
                 }
@@ -30,4 +30,4 @@ struct MainView: View {
 
 #Preview {
     MainView()
-}
+} 

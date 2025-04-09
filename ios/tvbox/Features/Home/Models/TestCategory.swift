@@ -1,6 +1,6 @@
 import Foundation
 
-struct Category: Identifiable, Codable {
+struct TestCategory: Identifiable, Codable {
     let id: String
     let name: String
     let type: CategoryType
