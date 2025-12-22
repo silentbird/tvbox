@@ -232,10 +232,14 @@ class DetailViewModel: ObservableObject {
     @Published var error: Error?
     @Published var playerContent: PlayerContent?
     @Published var isLoadingPlayer = false
+    @Published var parsedUrl: URL?
+    @Published var parsedHeaders: [String: String]?
+    @Published var parseStatus: String = ""
     
     private let apiConfig = ApiConfig.shared
     private let storageManager = StorageManager.shared
     private let spiderManager = SpiderManager.shared
+    private let parserManager = ParserManager.shared
     
     /// 加载视频详情
     /// - Parameter vodId: 视频ID
@@ -275,17 +279,48 @@ class DetailViewModel: ObservableObject {
     func loadPlayerContent(flag: String, episode: VodInfo.VodPlayItem) {
         isLoadingPlayer = true
         playerContent = nil
+        parsedUrl = nil
+        parsedHeaders = nil
+        parseStatus = "正在获取播放信息..."
         
         Task {
             do {
-                let content = try await spiderManager.playerContent(flag: flag, id: episode.url)
+                // 1. 获取播放内容
+                var content = try await spiderManager.playerContent(flag: flag, id: episode.url)
+                
                 await MainActor.run {
                     self.playerContent = content
+                }
+                
+                // 2. 检查是否需要解析
+                if content.needParse {
+                    await MainActor.run {
+                        self.parseStatus = "正在解析播放地址..."
+                    }
+                    
+                    // 调用解析接口
+                    content = try await parserManager.parse(content: content)
+                    
+                    await MainActor.run {
+                        self.playerContent = content
+                    }
+                }
+                
+                // 3. 设置最终的播放 URL
+                await MainActor.run {
+                    if let url = URL(string: content.url) {
+                        self.parsedUrl = url
+                        self.parsedHeaders = content.header
+                        self.parseStatus = ""
+                    } else {
+                        self.parseStatus = "无效的播放地址"
+                    }
                     self.isLoadingPlayer = false
                 }
             } catch {
                 await MainActor.run {
                     self.error = error
+                    self.parseStatus = "解析失败: \(error.localizedDescription)"
                     self.isLoadingPlayer = false
                 }
             }
@@ -293,17 +328,38 @@ class DetailViewModel: ObservableObject {
     }
     
     /// 获取实际播放地址
-    /// - Returns: 可播放的 URL
-    func getPlayUrl() -> URL? {
-        guard let content = playerContent else { return nil }
-        
-        if content.needParse {
-            // 需要解析，这里应该调用解析接口
-            // 暂时返回原始 URL
-            return URL(string: content.url)
+    /// - Returns: 可播放的 URL 和 headers
+    func getPlayUrl() -> (url: URL?, headers: [String: String]?) {
+        // 优先返回已解析的 URL
+        if let parsedUrl = parsedUrl {
+            return (parsedUrl, parsedHeaders)
         }
         
-        return URL(string: content.url)
+        // 否则返回原始 URL
+        guard let content = playerContent else { return (nil, nil) }
+        return (URL(string: content.url), content.header)
+    }
+    
+    /// 异步获取播放地址 (带解析)
+    /// - Parameters:
+    ///   - flag: 播放源标识
+    ///   - episode: 剧集信息
+    /// - Returns: 可播放的 URL 和 headers
+    func getPlayUrlAsync(flag: String, episode: VodInfo.VodPlayItem) async throws -> (url: URL, headers: [String: String]?) {
+        // 1. 获取播放内容
+        var content = try await spiderManager.playerContent(flag: flag, id: episode.url)
+        
+        // 2. 如果需要解析
+        if content.needParse {
+            content = try await parserManager.parse(content: content)
+        }
+        
+        // 3. 返回 URL
+        guard let url = URL(string: content.url) else {
+            throw ParserError.invalidUrl
+        }
+        
+        return (url, content.header)
     }
     
     /// 切换收藏状态
