@@ -36,5 +36,4 @@ public class ScreenUtils {
         return uiModeManager.getCurrentModeType() == Configuration.UI_MODE_TYPE_TELEVISION || (checkScreenLayoutIsTv(context) && !checkIsPhone(context));
     }
 
-
 }

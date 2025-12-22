@@ -1,78 +1,272 @@
 package com.github.tvbox.osc.util;
 
+import static com.bumptech.glide.load.resource.bitmap.VideoDecoder.FRAME_OPTION;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.graphics.Canvas;
-import android.graphics.Color;
-import android.graphics.Paint;
-import android.graphics.RectF;
-import android.graphics.drawable.BitmapDrawable;
-import android.graphics.drawable.Drawable;
-import android.util.Base64;
+import android.media.MediaMetadataRetriever;
+import android.text.TextUtils;
+import android.widget.ImageView;
+import androidx.annotation.Nullable;
 
+import com.bumptech.glide.Glide;
+import com.bumptech.glide.load.DataSource;
+import com.bumptech.glide.load.DecodeFormat;
+import com.bumptech.glide.load.engine.DiskCacheStrategy;
+import com.bumptech.glide.load.engine.GlideException;
+import com.bumptech.glide.load.model.GlideUrl;
+import com.bumptech.glide.load.model.LazyHeaders;
+import com.bumptech.glide.load.resource.bitmap.CenterCrop;
+import com.bumptech.glide.load.resource.bitmap.RoundedCorners;
+import com.bumptech.glide.request.RequestListener;
+import com.bumptech.glide.request.RequestOptions;
+import com.bumptech.glide.request.target.Target;
+import com.github.tvbox.osc.R;
+import com.github.tvbox.osc.api.ApiConfig;
 import com.github.tvbox.osc.base.App;
+import com.google.common.net.HttpHeaders;
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Random;
+import org.json.JSONException;
+import org.json.JSONObject;
 
-import me.jessyan.autosize.utils.AutoSizeUtils;
+import java.io.UnsupportedEncodingException;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLDecoder;
 
-/**
- *base64图片
- * @version 1.0.0 <br/>
- */
 public class ImgUtil {
-    private static final Map<String, Drawable> drawableCache = new HashMap<>();
-    public static boolean isBase64Image(String picUrl) {
-        return picUrl.startsWith("data:image");
-    }
+    public static int defaultWidth = 244;
+    public static int defaultHeight = 320;
 
-    public static Bitmap decodeBase64ToBitmap(String base64Str) {
-        // 去掉 Base64 数据的头部前缀，例如 "data:image/png;base64,"
-        String base64Data = base64Str.substring(base64Str.indexOf(",") + 1);
-        byte[] decodedBytes = Base64.decode(base64Data, Base64.DEFAULT);
-        return BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.length);
-    }
+    /**
+     * style 数据结构：ratio 指定宽高比（宽 / 高），type 表示风格（例如 rect、list）
+     */
+    public static class Style {
+        public float ratio;
+        public String type;
 
-    public static Drawable createTextDrawable(String text) {
-        if(text.isEmpty())text="J";
-        text=text.substring(0, 1);
-        // 如果缓存中已存在，直接返回
-        if (drawableCache.containsKey(text)) {
-            return drawableCache.get(text);
+        public Style(float ratio, String type) {
+            this.ratio = ratio;
+            this.type = type;
         }
-        int width = 150, height = 200; // 设定图片大小
-        int randomColor = getRandomColor();
-        float cornerRadius = AutoSizeUtils.mm2px(App.getInstance(), 5); // 圆角半径
-
-        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-        Canvas canvas = new Canvas(bitmap);
-        // 画圆角背景
-        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        paint.setColor(randomColor);
-        paint.setStyle(Paint.Style.FILL);
-        RectF rectF = new RectF(0, 0, width, height);
-        canvas.drawRoundRect(rectF, cornerRadius, cornerRadius, paint);
-        paint.setColor(Color.WHITE); // 文字颜色
-        paint.setTextSize(50); // 文字大小
-        paint.setTextAlign(Paint.Align.CENTER);
-        Paint.FontMetrics fontMetrics = paint.getFontMetrics();
-        float x = width / 2f;
-        float y = (height - fontMetrics.bottom - fontMetrics.top) / 2f;
-
-        canvas.drawText(text, x, y, paint);
-        Drawable drawable = new BitmapDrawable(bitmap);
-        drawableCache.put(text, drawable);
-        return drawable;
-
-    }
-    public static int getRandomColor() {
-        Random random = new Random();
-        return Color.argb(255, random.nextInt(256), random.nextInt(256), random.nextInt(256));
     }
 
-    public static void clearCache() {
-        drawableCache.clear();
+    public static Style initStyle() {
+        String bStyle = ApiConfig.get().getHomeSourceBean().getStyle();
+        if(!bStyle.isEmpty()){
+            try {
+                JSONObject jsonObject = new JSONObject(bStyle);
+                float ratio = (float) jsonObject.getDouble("ratio");
+                String type = jsonObject.getString("type");
+                return new Style(ratio, type);
+            }catch (JSONException e){
+
+            }
+        }
+        return null;
+    }
+
+    public static int spanCountByStyle(Style style,int defaultCount){
+        int spanCount=defaultCount;
+        if ("rect".equals(style.type)) {
+            if (style.ratio >= 1.7) {
+                spanCount = 3; // 横图
+            } else if (style.ratio >= 1.3) {
+                spanCount = 4; // 4:3
+            }
+        } else if ("list".equals(style.type)) {
+            spanCount = 1;
+        }
+        return spanCount;
+    }
+
+    public static int getStyleDefaultWidth(Style style){
+        int styleDefaultWidth = 280;
+        if(style.ratio<1)styleDefaultWidth=214;
+        if(style.ratio>1.7)styleDefaultWidth=380;
+        return styleDefaultWidth;
+    }
+//    public static void load(String url, ImageView view) {
+//        load(url, view, 10);
+//    }
+//
+//    public static void load(String url, ImageView view, ImageView.ScaleType scaleType) {
+//        load(url, view, 10, scaleType);
+//    }
+//
+//    public static void load(String url, ImageView view, int roundingRadius, ImageView.ScaleType scaleType) {
+//        view.setScaleType(ImageView.ScaleType.FIT_CENTER);
+//        if (TextUtils.isEmpty(url)) {
+//            view.setImageResource(R.drawable.img_loading_placeholder);
+//        } else {
+//            if (roundingRadius == 0) roundingRadius = 1;
+//            RequestOptions requestOptions = new RequestOptions()
+//                .format(DecodeFormat.PREFER_RGB_565)
+//                .diskCacheStrategy(getDiskCacheStrategy(4))
+//                .dontAnimate()
+//                .transform(
+//            new RoundedCorners(roundingRadius));
+//            Glide.with(App.getInstance())
+//                .asBitmap()
+//                .load(getUrl(url))
+//                .error(R.drawable.img_loading_placeholder)
+//                .placeholder(R.drawable.img_loading_placeholder)
+//                .listener(getListener(view, scaleType))
+//                .apply(requestOptions)
+//                .into(view);
+//        }
+//    }
+    public static void load(String url, ImageView view, int roundingRadius) {
+        load(url, view, roundingRadius,0,0);
+    }
+
+    public static void load(String url, ImageView view, int roundingRadius, int newWidth, int newHeight) {
+        view.setScaleType(ImageView.ScaleType.CENTER);
+        if (TextUtils.isEmpty(url)) {
+            view.setImageResource(R.drawable.img_loading_placeholder);
+        } else {
+            if (roundingRadius == 0) roundingRadius = 1;
+            RequestOptions requestOptions = new RequestOptions()
+                .format(DecodeFormat.PREFER_RGB_565)
+                .diskCacheStrategy(getDiskCacheStrategy(4))
+                .dontAnimate()
+                .transform(new CenterCrop(), new RoundedCorners(roundingRadius));
+            if (newWidth > 0 && newHeight > 0) {
+                requestOptions = requestOptions.override(newWidth, newHeight);
+            }
+            Glide.with(App.getInstance())
+                .asBitmap()
+                .load(getUrl(url))
+                .error(R.drawable.img_loading_placeholder)
+                .placeholder(R.drawable.img_loading_placeholder)
+                .listener(getListener(view, ImageView.ScaleType.FIT_XY))
+                .apply(requestOptions)
+                .into(view);
+        }
+    }
+
+    /*
+     * 使用Glide方式获取视频某一帧
+     * @param uri 视频地址
+     * @param imageView 设置image
+     * @param frameTimeMicros 获取某一时间帧.
+     */
+    public static void loadVideoScreenshot(String uri, ImageView imageView, long frameTimeMicros) {
+        RequestOptions requestOptions = RequestOptions.frameOf(frameTimeMicros * 1000)
+            .set(FRAME_OPTION, MediaMetadataRetriever.OPTION_CLOSEST)
+            .transform(
+        new CenterCrop(),
+        new RoundedCorners(10));
+        Glide.with(App.getInstance())
+            .load(uri)
+            .skipMemoryCache(true)
+            .apply(requestOptions)
+            .into(imageView);
+    }
+
+    public static String getDiskCacheStrategyName(int index) {
+        String[] names = new String[] {
+            "[NONE] 关闭", "[RESOURCE] 转换图片", "[DATA] 原始图片 ", "[ALL] 原始图片和转换图片", "[AUTOMATIC] 自动"
+        };
+        return names[index];
+    }
+
+    public static DiskCacheStrategy getDiskCacheStrategy(int index) {
+        switch (index) {
+            case 1:
+                return DiskCacheStrategy.RESOURCE;
+            case 2:
+                return DiskCacheStrategy.DATA;
+            case 3:
+                return DiskCacheStrategy.ALL;
+            case 4:
+                return DiskCacheStrategy.AUTOMATIC;
+            default:
+                return DiskCacheStrategy.NONE;
+        }
+    }
+
+    private static Object getUrl(String url) {
+        if (url.startsWith("data:")) return url;
+        url = DefaultConfig.checkReplaceProxy(url);
+
+        String header = null;
+        String referer = null;
+        String ua = UA.random();
+        String cookie = null;
+
+        if (url.contains("doubanio.com") && !url.contains("@Referer=") && !url.contains("@User-Agent=")) {
+            url += "@Referer=https://api.douban.com/@User-Agent=" + ua;
+        }
+
+        //检查链接里面是否有自定义header
+        if (url.contains("@Headers=")) {
+            header = url.split("@Headers=")[1].split("@")[0];
+            try {
+                header = URLDecoder.decode(header, "UTF-8");
+            } catch (UnsupportedEncodingException e) {
+                e.printStackTrace();
+            }
+        }
+        if (url.contains("@Cookie=")) cookie = url.split("@Cookie=")[1].split("@")[0];
+        if (url.contains("@User-Agent=")) ua = url.split("@User-Agent=")[1].split("@")[0];
+        if (url.contains("@Referer=")) referer = url.split("@Referer=")[1].split("@")[0];
+        url = url.split("@")[0];
+        if(TextUtils.isEmpty(url)) return null;
+        /*   AuthInfo authInfo = new AuthInfo(url);
+        url = authInfo.url; */
+
+        LazyHeaders.Builder builder = new LazyHeaders.Builder();
+
+        /*     if (!authInfo.auth.isEmpty()) {
+            builder.addHeader(HttpHeaders.AUTHORIZATION, authInfo.auth);
+        }*/
+
+        if (!TextUtils.isEmpty(header)) {
+            JsonObject jsonInfo = new Gson()
+                .fromJson(header, JsonObject.class);
+            for (String key: jsonInfo.keySet()) {
+                String val = jsonInfo.get(key)
+                    .getAsString();
+                builder.addHeader(key, val);
+            }
+        } else {
+            if (!TextUtils.isEmpty(cookie)) {
+                builder.addHeader(HttpHeaders.COOKIE, cookie);
+            }
+            if (!TextUtils.isEmpty(ua)) {
+                builder.addHeader(HttpHeaders.USER_AGENT, ua);
+            } else {
+                String mobile_UA = "Dalvik/2.1.0 (Linux; U; Android 13; M2102J2SC Build/TKQ1.220829.002)";
+                builder.addHeader(HttpHeaders.USER_AGENT, mobile_UA);
+            }
+            if (!TextUtils.isEmpty(referer)) builder.addHeader(HttpHeaders.REFERER, referer);
+        }
+
+        try {
+            URL imgUrl = new URL(url);
+            String host = imgUrl.getHost();
+            builder.addHeader(HttpHeaders.HOST, host);
+        } catch (MalformedURLException e) {
+            e.printStackTrace();
+        }
+
+        return new GlideUrl(url, builder.build());
+    }
+
+    private static RequestListener < Bitmap > getListener(ImageView view, ImageView.ScaleType scaleType) {
+        return new RequestListener < Bitmap > () {@Override
+            public boolean onLoadFailed(@Nullable GlideException e, Object model, Target < Bitmap > target, boolean isFirstResource) {
+                view.setScaleType(scaleType);
+                view.setImageResource(R.drawable.img_loading_placeholder);
+                return true;
+            }
+
+            @Override
+            public boolean onResourceReady(Bitmap resource, Object model, Target < Bitmap > target, DataSource dataSource, boolean isFirstResource) {
+                view.setScaleType(scaleType);
+                return false;
+            }
+        };
     }
 }

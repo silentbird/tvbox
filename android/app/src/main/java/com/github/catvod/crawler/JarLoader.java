@@ -1,3 +1,4 @@
+
 package com.github.catvod.crawler;
 
 import android.content.Context;
@@ -38,18 +39,6 @@ public class JarLoader {
     public boolean load(String cache) {
         recentJarKey = "main";
         return loadClassLoader(cache, recentJarKey);
-    }
-
-    public void setRecentJarKey(String key) {
-        recentJarKey = key;
-    }
-
-    public void loadLiveJar(String jarUrl) {
-        String[] urls = jarUrl.split(";md5;");
-        jarUrl = urls[0];
-        String jarKey = MD5.string2MD5(jarUrl);
-        String jarMd5 = urls.length > 1 ? urls[1].trim() : "";
-        loadJarInternal(jarUrl,jarMd5,jarKey);
     }
 
     public void clear() {
@@ -124,13 +113,17 @@ public class JarLoader {
         File cache = new File(App.getInstance().getFilesDir().getAbsolutePath() + "/csp/" + key + ".jar");
         if (!md5.isEmpty()) {
             if (cache.exists() && MD5.getFileMd5(cache).equalsIgnoreCase(md5)) {
-                loadClassLoader(cache.getAbsolutePath(), key);
-                return classLoaders.get(key);
+                if(loadClassLoader(cache.getAbsolutePath(), key)){
+                    return classLoaders.get(key);
+                }else {
+                    return null;
+                }
             }
         }else {
             if (cache.exists() && !FileUtils.isWeekAgo(cache)) {
-                loadClassLoader(cache.getAbsolutePath(), key);
-                return classLoaders.get(key);
+                if(loadClassLoader(cache.getAbsolutePath(), key)){
+                    return classLoaders.get(key);
+                }
             }
         }
         try {
@@ -185,9 +178,9 @@ public class JarLoader {
             Log.i("JarLoader", "echo-getSpider 加载spider: " + key);
             Spider sp = (Spider) classLoader.loadClass("com.github.catvod.spider." + clsKey).newInstance();
             sp.init(App.getInstance(), ext);
-//            if (!jar.isEmpty()) {
-//                sp.homeContent(false); // 增加此行 应该可以解决部分写的有问题源的历史记录问题 但会增加这个源的首次加载时间 不需要可以已删掉
-//            }
+            if (!jar.isEmpty()) {
+                sp.homeContent(false); // 增加此行 应该可以解决部分写的有问题源的历史记录问题 但会增加这个源的首次加载时间 不需要可以已删掉
+            }
             spiders.put(key, sp);
             return sp;
         } catch (Throwable th) {

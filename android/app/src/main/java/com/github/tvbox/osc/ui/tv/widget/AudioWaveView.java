@@ -1,6 +1,5 @@
 package com.github.tvbox.osc.ui.tv.widget;
 
-
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -19,6 +18,8 @@ public class AudioWaveView extends View {
     private RectF rectF3;
     private RectF rectF4;
     private RectF rectF5;
+    private RectF rectF6;
+    private RectF rectF7;
     private int viewWidth;
     private int viewHeight;
     /** 每个条的宽度 */
@@ -59,7 +60,7 @@ public class AudioWaveView extends View {
 
     private void init() {
         paint = new Paint();
-        paint.setColor(Color.RED);//字节跳动颜色
+        paint.setColor(Color.WHITE);//字节跳动颜色
         paint.setStyle(Paint.Style.FILL);
         random = new Random();
 
@@ -72,6 +73,8 @@ public class AudioWaveView extends View {
         rectF3 = new RectF();
         rectF4 = new RectF();
         rectF5 = new RectF();
+        rectF6 = new RectF();
+        rectF7 = new RectF();
     }
 
     @Override
@@ -91,13 +94,19 @@ public class AudioWaveView extends View {
         rectF4.set(left * 3, randomHeight, left * 3 + rectWidth, viewHeight);
         randomHeight = random.nextInt(viewHeight);
         rectF5.set(left * 4, randomHeight, left * 4 + rectWidth, viewHeight);
+        randomHeight = random.nextInt(viewHeight);
+        rectF6.set(left * 5, randomHeight, left * 5 + rectWidth, viewHeight);
+        randomHeight = random.nextInt(viewHeight);
+        rectF7.set(left * 6, randomHeight, left * 6 + rectWidth, viewHeight);
 
         canvas.drawRect(rectF1, paint);
         canvas.drawRect(rectF2, paint);
         canvas.drawRect(rectF3, paint);
         canvas.drawRect(rectF4, paint);
         canvas.drawRect(rectF5, paint);
+        canvas.drawRect(rectF6, paint);
+        canvas.drawRect(rectF7, paint);
 
-        handler.sendEmptyMessageDelayed(0, 200); //每间隔200毫秒发送消息刷新
+        handler.sendEmptyMessageDelayed(0, 300); //每间隔200毫秒发送消息刷新
     }
 }

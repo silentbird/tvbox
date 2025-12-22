@@ -1,27 +1,18 @@
 package com.github.catvod.crawler;
 
 import android.content.Context;
-
 import com.github.tvbox.osc.util.OkGoHelper;
-
-import org.json.JSONObject;
-
+import com.github.tvbox.osc.util.js.Connect;
 import java.util.HashMap;
 import java.util.List;
-
+import java.util.Map;
 import okhttp3.Dns;
 
 public class Spider {
 
-    public static JSONObject empty = new JSONObject();
+    public void init(Context context) throws Exception {}
 
-    protected static Context mContext;
-
-    public void init(Context context) {
-        mContext = context;
-    }
-
-    public void init(Context context, String extend) {
+    public void init(Context context, String extend) throws Exception {
         init(context);
     }
 
@@ -31,7 +22,7 @@ public class Spider {
      * @param filter 是否开启筛选
      * @return
      */
-    public String homeContent(boolean filter) {
+    public String homeContent(boolean filter) throws Exception {
         return "";
     }
 
@@ -40,7 +31,7 @@ public class Spider {
      *
      * @return
      */
-    public String homeVideoContent() {
+    public String homeVideoContent() throws Exception {
         return "";
     }
 
@@ -53,7 +44,7 @@ public class Spider {
      * @param extend
      * @return
      */
-    public String categoryContent(String tid, String pg, boolean filter, HashMap<String, String> extend) {
+    public String categoryContent(String tid, String pg, boolean filter, HashMap < String, String > extend) throws Exception {
         return "";
     }
 
@@ -63,7 +54,7 @@ public class Spider {
      * @param ids
      * @return
      */
-    public String detailContent(List<String> ids) {
+    public String detailContent(List < String > ids) throws Exception {
         return "";
     }
 
@@ -74,7 +65,7 @@ public class Spider {
      * @param quick
      * @return
      */
-    public String searchContent(String key, boolean quick) {
+    public String searchContent(String key, boolean quick) throws Exception {
         return "";
     }
 
@@ -85,7 +76,11 @@ public class Spider {
      * @param id
      * @return
      */
-    public String playerContent(String flag, String id, List<String> vipFlags) {
+    public String searchContent(String key, boolean quick, String pg) throws Exception {
+        return "";
+    }
+
+    public String playerContent(String flag, String id, List < String > vipFlags) throws Exception {
         return "";
     }
 
@@ -95,7 +90,7 @@ public class Spider {
      * @param url
      * @return
      */
-    public boolean isVideoFormat(String url) {
+    public boolean manualVideoCheck() throws Exception {
         return false;
     }
 
@@ -104,9 +99,19 @@ public class Spider {
      *
      * @return
      */
-    public boolean manualVideoCheck() {
+    public boolean isVideoFormat(String url) throws Exception {
         return false;
     }
+
+    public Object[] proxyLocal(Map < String, String > params) throws Exception {
+        return null;
+    }
+
+    public void cancelByTag() {
+
+    }
+
+    public void destroy() {}
 
     /**
      * 直播list

@@ -22,7 +22,6 @@
  * DEALINGS IN THE SOFTWARE.
  *
  * @author J. David REQUEJO
- *
  */
 
 package com.github.tvbox.osc.subtitle.format;
@@ -85,7 +84,7 @@ public class FormatSRT implements TimedTextFileFormat {
                             lineCounter++;
                             line = br.readLine().trim();
                             String start = line.substring(0, 12);
-                            String end = line.substring(line.length() - 12, line.length());
+                            String end = line.substring(line.length() - 12);
                             Time time = new Time("hh:mm:ss,ms", start);
                             caption.start = time;
                             time = new Time("hh:mm:ss,ms", end);

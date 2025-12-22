@@ -1,16 +1,19 @@
 package com.github.tvbox.osc.ui.fragment;
-
+import android.content.res.TypedArray;
 import android.content.Context;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.animation.BounceInterpolator;
-
 import androidx.core.content.ContextCompat;
+import android.widget.Toast;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.lifecycle.Observer;
 import androidx.lifecycle.ViewModelProvider;
+import com.blankj.utilcode.util.GsonUtils;
 import androidx.recyclerview.widget.LinearLayoutManager;
-
 import com.chad.library.adapter.base.BaseQuickAdapter;
 import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.api.ApiConfig;
@@ -27,9 +30,10 @@ import com.github.tvbox.osc.ui.adapter.GridAdapter;
 import com.github.tvbox.osc.ui.adapter.GridFilterKVAdapter;
 import com.github.tvbox.osc.ui.dialog.GridFilterDialog;
 import com.github.tvbox.osc.ui.tv.widget.LoadMoreView;
+import com.github.tvbox.osc.util.ImgUtil;
 import com.github.tvbox.osc.util.FastClickCheckUtil;
-import com.github.tvbox.osc.util.HawkConfig;
 import com.github.tvbox.osc.util.LOG;
+import com.github.tvbox.osc.util.HawkConfig;
 import com.github.tvbox.osc.viewmodel.SourceViewModel;
 import com.orhanobut.hawk.Hawk;
 import com.owen.tvrecyclerview.widget.TvRecyclerView;
@@ -37,13 +41,12 @@ import com.owen.tvrecyclerview.widget.V7GridLayoutManager;
 import com.owen.tvrecyclerview.widget.V7LinearLayoutManager;
 
 import java.util.ArrayList;
-import java.util.Stack;
-import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Toast;
-
 import org.greenrobot.eventbus.EventBus;
+import org.json.JSONException;
+import org.json.JSONObject;
+import java.util.Stack;
 
 /**
  * @author pj567
@@ -61,15 +64,17 @@ public class GridFragment extends BaseLazyFragment {
     private boolean isLoad = false;
     private boolean isTop = true;
     private View focusedView = null;
-    private class GridInfo{
+
+    private static class GridInfo{
         public String sortID="";
         public TvRecyclerView mGridView;
         public GridAdapter gridAdapter;
         public int page = 1;
         public int maxPage = 1;
         public boolean isLoad = false;
-        public View focusedView= null;
+        public View focusedView = null;
     }
+
     Stack<GridInfo> mGrids = new Stack<GridInfo>(); //ui栈
 
     public static GridFragment newInstance(MovieSort.SortData sortData) {
@@ -85,6 +90,14 @@ public class GridFragment extends BaseLazyFragment {
     protected int getLayoutResID() {
         return R.layout.fragment_grid;
     }
+    
+    @Override
+    public void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        if (savedInstanceState != null && this.sortData == null) {
+            this.sortData = GsonUtils.fromJson(savedInstanceState.getString("sortDataJson"), MovieSort.SortData.class);
+        }
+    }
 
     @Override
     protected void init() {
@@ -92,28 +105,41 @@ public class GridFragment extends BaseLazyFragment {
         initViewModel();
         initData();
     }
+    
+    @Override
+    public void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putString("sortDataJson", GsonUtils.toJson(sortData));        
+    }
 
     private void changeView(String id,Boolean isFolder){
         if(isFolder){
-            this.sortData.flag ="1"; // 修改sortData.flag
+            this.sortData.flag =style==null?"1":"2"; // 修改sortData.flag
         }else {
             this.sortData.flag ="2"; // 修改sortData.flag
         }
         initView();
-        this.sortData.id =id; // 修改sortData.id为新的ID
+        this.sortData.id = id; // 修改sortData.id为新的ID
         initViewModel();
         initData();
     }
-    public boolean isFolederMode(){ return (getUITag() =='1'); }
-    // 获取当前页面UI的显示模式 ‘0’ 正常模式 '1' 文件夹模式 '2' 显示缩略图的文件夹模式
-    public char getUITag(){
-        return (sortData == null || sortData.flag == null || sortData.flag.length() ==0 ) ?  '0' : sortData.flag.charAt(0);
+
+    public boolean isFolederMode() {
+        return (getUITag() == '1');
     }
+
+    // 获取当前页面UI的显示模式 ‘0’ 正常模式 '1' 文件夹模式 '2' 显示缩略图的文件夹模式
+    public char getUITag() {
+        return (sortData == null || sortData.flag == null || sortData.flag.length() == 0) ? '0' : sortData.flag.charAt(0);
+    }
+
     // 是否允许聚合搜索 sortData.flag的第二个字符为‘1’时允许聚搜
-    public boolean enableFastSearch(){  return sortData.flag == null || sortData.flag.length() < 2 || (sortData.flag.charAt(1) == '1'); }
+    public boolean enableFastSearch() {  return sortData.flag == null || sortData.flag.length() < 2 || (sortData.flag.charAt(1) == '1'); }
+    //public boolean enableFastSearch() {  return (sortData.flag == null || sortData.flag.length() < 2) ? true : (sortData.flag.charAt(1) == '1'); }
+
     // 保存当前页面
-    private void saveCurrentView(){
-        if(this.mGridView == null) return;
+    private void saveCurrentView() {
+        if (this.mGridView == null) return;
         GridInfo info = new GridInfo();
         info.sortID = this.sortData.id;
         info.mGridView = this.mGridView;
@@ -124,9 +150,10 @@ public class GridFragment extends BaseLazyFragment {
         info.focusedView = this.focusedView;
         this.mGrids.push(info);
     }
+
     // 丢弃当前页面，将页面还原成上一个保存的页面
-    public boolean restoreView(){
-        if(mGrids.empty()) return false;
+    public boolean restoreView() {
+        if (mGrids.empty()) return false;
         this.showSuccess();
         ((ViewGroup) mGridView.getParent()).removeView(this.mGridView); // 重父窗口移除当前控件
         GridInfo info = mGrids.pop();// 还原上次保存的控件
@@ -139,17 +166,19 @@ public class GridFragment extends BaseLazyFragment {
         this.focusedView = info.focusedView;
         this.mGridView.setVisibility(View.VISIBLE);
 //        if(this.focusedView != null){ this.focusedView.requestFocus(); }
-        if(mGridView != null) mGridView.requestFocus();
+        if (mGridView != null) mGridView.requestFocus();
         return true;
     }
+
+    private ImgUtil.Style style;
     // 更改当前页面
-    private void createView(){
+    private void createView() {
         this.saveCurrentView(); // 保存当前页面
-        if(mGridView == null){ // 从layout中拿view
+        if (mGridView == null) { // 从layout中拿view
             mGridView = findViewById(R.id.mGridView);
-        }else{ // 复制当前view
+        } else { // 复制当前view
             TvRecyclerView v3 = new TvRecyclerView(this.mContext);
-            v3.setSpacingWithMargins(10,10);
+            v3.setSpacingWithMargins(10, 10);
             v3.setLayoutParams(mGridView.getLayoutParams());
             v3.setPadding(mGridView.getPaddingLeft(), mGridView.getPaddingTop(), mGridView.getPaddingRight(), mGridView.getPaddingBottom());
             v3.setClipToPadding(mGridView.getClipToPadding());
@@ -159,19 +188,28 @@ public class GridFragment extends BaseLazyFragment {
             mGridView.setVisibility(View.VISIBLE);
         }
         mGridView.setHasFixedSize(true);
-        gridAdapter = new GridAdapter(isFolederMode());
-        this.page =1;
-        this.maxPage =1;
+        style=ImgUtil.initStyle();
+        gridAdapter = new GridAdapter(isFolederMode(), style);
+        this.page = 1;
+        this.maxPage = 1;
         this.isLoad = false;
     }
 
     private void initView() {
         this.createView();
         mGridView.setAdapter(gridAdapter);
-        if(isFolederMode()){
+        if (isFolederMode()) {
             mGridView.setLayoutManager(new V7LinearLayoutManager(this.mContext, 1, false));
-        }else{
-            mGridView.setLayoutManager(new V7GridLayoutManager(this.mContext, isBaseOnWidth() ? 5 : 6));
+        } else {
+            int spanCount = isBaseOnWidth() ? 5 : 6;
+            if (style != null) {
+                spanCount = ImgUtil.spanCountByStyle(style, spanCount);
+            }
+            if (spanCount == 1) {
+                mGridView.setLayoutManager(new V7LinearLayoutManager(mContext, spanCount, false));
+            } else {
+                mGridView.setLayoutManager(new V7GridLayoutManager(mContext, spanCount));
+            }
         }
 
         gridAdapter.setOnLoadMoreListener(new BaseQuickAdapter.RequestLoadMoreListener() {
@@ -189,7 +227,7 @@ public class GridFragment extends BaseLazyFragment {
 
             @Override
             public void onItemSelected(TvRecyclerView parent, View itemView, int position) {
-                itemView.animate().scaleX(1.05f).scaleY(1.05f).setDuration(300).setInterpolator(new BounceInterpolator()).start();
+                itemView.animate().scaleX(1.2f).scaleY(1.2f).setDuration(300).setInterpolator(new BounceInterpolator()).start();
             }
 
             @Override
@@ -222,15 +260,14 @@ public class GridFragment extends BaseLazyFragment {
                         }else {
                             changeView(video.id,false);
                         }
-                    }
-                    else{
-                        if(video.id == null || video.id.isEmpty() || video.id.startsWith("msearch:")){
+                    } else {
+                        if (video.id == null || video.id.isEmpty() || video.id.startsWith("msearch:")) {
                             if(Hawk.get(HawkConfig.FAST_SEARCH_MODE, false) && enableFastSearch()){
                                 jumpActivity(FastSearchActivity.class, bundle);
                             }else {
                                 jumpActivity(SearchActivity.class, bundle);
                             }
-                        }else {
+                        } else {
                             jumpActivity(DetailActivity.class, bundle);
                         }
                     }
@@ -238,6 +275,7 @@ public class GridFragment extends BaseLazyFragment {
                 }
             }
         });
+        // takagen99 : Long Press to Fast Search
         gridAdapter.setOnItemLongClickListener(new BaseQuickAdapter.OnItemLongClickListener() {
             @Override
             public boolean onItemLongClick(BaseQuickAdapter adapter, View view, int position) {
@@ -254,15 +292,18 @@ public class GridFragment extends BaseLazyFragment {
             }
         });
         gridAdapter.setLoadMoreView(new LoadMoreView());
-        setLoadSir2(mGridView);
+        setLoadSir(mGridView);
     }
 
     private void initViewModel() {
-        if(sourceViewModel != null) { return;}
+        if (sourceViewModel != null) {
+            return;
+        }
         sourceViewModel = new ViewModelProvider(this).get(SourceViewModel.class);
         sourceViewModel.listResult.observe(this, new Observer<AbsXml>() {
             @Override
             public void onChanged(AbsXml absXml) {
+//                if(mGridView != null) mGridView.requestFocus();
                 if (absXml != null && absXml.movie != null && absXml.movie.videoList != null && absXml.movie.videoList.size() > 0) {
                     if (page == 1) {
                         showSuccess();
@@ -273,21 +314,23 @@ public class GridFragment extends BaseLazyFragment {
                     }
                     page++;
                     maxPage = absXml.movie.pagecount;
-                    if (maxPage>0 && page > maxPage) {
+                    if (page > maxPage && maxPage!=0) {
                         gridAdapter.loadMoreEnd();
                         gridAdapter.setEnableLoadMore(false);
-                        if(page>2)Toast.makeText(getContext(), "没有更多了", Toast.LENGTH_SHORT).show();
-                    }else {
+                    } else {
                         gridAdapter.loadMoreComplete();
                         gridAdapter.setEnableLoadMore(true);
                     }
                 } else {
                     if (page == 1) {
                         showEmpty();
-                    } else if(page > 2){// 只有一页数据时不提示
-                        Toast.makeText(getContext(), "没有更多了", Toast.LENGTH_SHORT).show();
                     }
-                    gridAdapter.loadMoreEnd();
+                    if (page > maxPage && maxPage!=0) {
+                        Toast.makeText(getContext(), "没有更多了", Toast.LENGTH_SHORT).show();
+                        gridAdapter.loadMoreEnd();
+                    } else {
+                        gridAdapter.loadMoreComplete();
+                    }
                     gridAdapter.setEnableLoadMore(false);
                 }
             }
@@ -299,14 +342,18 @@ public class GridFragment extends BaseLazyFragment {
     }
 
     private void initData() {
+    	if (ApiConfig.get().getHomeSourceBean().getApi()==null) {
+            showEmpty();
+            return;
+        }
         showLoading();
         isLoad = false;
         scrollTop();
-        toggleFilterColor();
+        toggleFilterStatus();
         sourceViewModel.getList(sortData, page);
     }
 
-    private void toggleFilterColor() {
+    private void toggleFilterStatus() {
         if (sortData!=null && sortData.filters != null && !sortData.filters.isEmpty()) {
             int count = sortData.filterSelectCount();
             EventBus.getDefault().post(new RefreshEvent(RefreshEvent.TYPE_FILTER_CHANGE, count));
@@ -323,7 +370,7 @@ public class GridFragment extends BaseLazyFragment {
     }
 
     public void showFilter() {
-        if (!sortData.filters.isEmpty() && gridFilterDialog == null) {
+    	if (sortData!=null && !sortData.filters.isEmpty() && gridFilterDialog == null) {
             gridFilterDialog = new GridFilterDialog(mContext);
 //            gridFilterDialog.setData(sortData);
 //            gridFilterDialog.setOnDismiss(new GridFilterDialog.Callback() {
@@ -343,8 +390,13 @@ public class GridFragment extends BaseLazyFragment {
         Context context = getContext();
         LayoutInflater inflater = LayoutInflater.from(context);
         assert context != null;
-        final int defaultColor = ContextCompat.getColor(context, R.color.color_FFFFFF);
-        final int selectedColor = ContextCompat.getColor(context, R.color.color_02F8E1);
+
+        // 获取动态主题颜色
+        TypedArray a = getContext().obtainStyledAttributes(R.styleable.themeColor);
+        int selectedColor = a.getColor(R.styleable.themeColor_color_theme, 0); // 选择的颜色
+        int defaultColor = ContextCompat.getColor(context, R.color.color_FFFFFF);
+        // 释放 TypedArray 资源
+        a.recycle();
         // 遍历过滤条件数据
         for (MovieSort.SortFilter filter : sortData.filters) {
             View line = inflater.inflate(R.layout.item_grid_filter, gridFilterDialog.filterRoot, false);

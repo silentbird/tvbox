@@ -22,19 +22,18 @@
  * DEALINGS IN THE SOFTWARE.
  *
  * @author J. David REQUEJO
- *
  */
 
 package com.github.tvbox.osc.subtitle.model;
 
 public class Subtitle {
-	
-	public Style style;
-	public Region region;
-	
-	public Time start;
-	public Time end;
-	
-	public String content="";
+
+    public Style style;
+    public Region region;
+
+    public Time start;
+    public Time end;
+
+    public String content = "";
 
 }

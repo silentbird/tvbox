@@ -1,28 +1,3 @@
-/*
- *                       Copyright (C) of Avery
- *
- *                              _ooOoo_
- *                             o8888888o
- *                             88" . "88
- *                             (| -_- |)
- *                             O\  =  /O
- *                          ____/`- -'\____
- *                        .'  \\|     |//  `.
- *                       /  \\|||  :  |||//  \
- *                      /  _||||| -:- |||||-  \
- *                      |   | \\\  -  /// |   |
- *                      | \_|  ''\- -/''  |   |
- *                      \  .-\__  `-`  ___/-. /
- *                    ___`. .' /- -.- -\  `. . __
- *                 ."" '<  `.___\_<|>_/___.'  >'"".
- *                | | :  `- \`.;`\ _ /`;.`/ - ` : | |
- *                \  \ `-.   \_ __\ /__ _/   .-` /  /
- *           ======`-.____`-.___\_____/___.-`____.-'======
- *                              `=- -='
- *           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
- *              Buddha bless, there will never be bug!!!
- */
-
 package com.github.tvbox.osc.subtitle.runtime;
 
 
@@ -37,7 +12,7 @@ import java.util.concurrent.Executor;
 public class AppTaskExecutor extends TaskExecutor {
 
     private TaskExecutor mDelegate;
-    private TaskExecutor mDefaultTaskExecutor;
+    private final TaskExecutor mDefaultTaskExecutor;
 
     private static AppTaskExecutor sInstance;
 
@@ -80,14 +55,14 @@ public class AppTaskExecutor extends TaskExecutor {
         return mDelegate.isMainThread();
     }
 
-    private static Executor sDeskIO = new Executor() {
+    private static final Executor sDeskIO = new Executor() {
         @Override
         public void execute(@NonNull final Runnable command) {
             getInstance().executeOnDeskIO(command);
         }
     };
 
-    private static Executor sMainThread = new Executor() {
+    private static final Executor sMainThread = new Executor() {
         @Override
         public void execute(@NonNull final Runnable command) {
             getInstance().executeOnMainThread(command);

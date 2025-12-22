@@ -1,11 +1,15 @@
 package com.github.tvbox.osc.bean;
 
-import com.github.tvbox.osc.api.ApiConfig;
+import static com.github.tvbox.osc.util.RegexUtils.getPattern;
+import android.text.TextUtils;
+
+import androidx.annotation.NonNull;
+
+import com.google.gson.Gson;
 
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Set;
@@ -47,6 +51,8 @@ public class VodInfo implements Serializable {
     public String des;// <![CDATA[权来]
     public String playFlag = null;
     public int playIndex = 0;
+    public int playGroup = 0;
+    public int playGroupCount = 0;
     public String playNote = "";
     public String sourceKey;
     public String playerCfg = "";
@@ -81,31 +87,42 @@ public class VodInfo implements Serializable {
                     seriesFlags.add(new VodSeriesFlag(urlInfo.flag));
                 }
             }
-
             seriesMap = new LinkedHashMap<>();
             for (VodSeriesFlag flag : seriesFlags) {
                 List<VodSeries> list = tempSeriesMap.get(flag.name);
                 assert list != null;
-                if(isReverse(list))Collections.reverse(list);
+                if(seriesFlags.size()<=3){
+                    if(isReverse(list))Collections.reverse(list);
+                }
                 seriesMap.put(flag.name, list);
             }
         }
     }
 
     private int extractNumber(String name) {
-        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("\\d+").matcher(name);
+        java.util.regex.Matcher matcher = getPattern("\\d+").matcher(name);
         if (matcher.find()) {
             return Integer.parseInt(matcher.group());
         }
         return 0;
     }
     private boolean isReverse(List<VodInfo.VodSeries> list) {
-        // 循环比较相邻元素
-        for (int i = 0; i < Math.min(list.size()-1,4); i++) {
+        if (list.size() > 300) {
+            return false;
+        }
+        int ascCount = 0, descCount = 0;
+        // 比较最多前 6 个相邻元素对
+        int limit = Math.min(list.size() - 1, 6);
+        for (int i = 0; i < limit; i++) {
             int current = extractNumber(list.get(i).name);
             int next = extractNumber(list.get(i + 1).name);
-            if (current < next) return false;
-            if (current > next) return true;
+            if (current < next) {
+                ascCount++;
+                if (ascCount == 2) return false;
+            } else if (current > next) {
+                descCount++;
+                if (descCount == 2) return true;
+            }
         }
         return false;
     }
@@ -116,7 +133,11 @@ public class VodInfo implements Serializable {
             Collections.reverse(seriesMap.get(flag));
         }
     }
-
+    
+    public int getplayIndex() {
+        return this.playGroup * this.playGroupCount + this.playIndex;
+    }
+    
     public static class VodSeriesFlag implements Serializable {
 
         public String name;
@@ -145,4 +166,50 @@ public class VodInfo implements Serializable {
             this.url = url;
         }
     }
+    
+    
+
+    @NonNull
+    @Override
+    public Object clone() {
+        try {
+            Gson gson = new Gson();
+            String json = gson.toJson(this);
+            return gson.fromJson(json, VodInfo.class);
+        } catch (Exception ignored) {
+        }
+        return this;
+    }
+
+    //takagen99
+    public boolean isSeriesEmpty() {
+        return seriesMap == null ? true : seriesMap.isEmpty();
+    }
+
+    public List<VodSeries> getFlagSeries(String playFlag) {
+        List<VodSeries> list = null;
+        if (!isSeriesEmpty()) {
+            list = seriesMap.get(playFlag);
+        } else {
+            list = new ArrayList<>();
+        }
+        return list;
+    }
+
+    public boolean isFlagSeriesEmpty(String playFlag) {
+        List<VodSeries> list = getFlagSeries(playFlag);
+        return list.isEmpty();
+    }
+
+    public VodSeries getVodSeries(String playFlag, int playIndex) {
+        VodSeries vodSeries = null;
+        List<VodSeries> list = getFlagSeries(playFlag);
+        if (list != null && !list.isEmpty()) {
+            if (playIndex >= 0 && playIndex < list.size()) {
+                vodSeries = list.get(playIndex);
+            }
+        }
+        return vodSeries;
+    }
+    
 }

@@ -16,10 +16,15 @@
         android:layout_marginEnd="@dimen/vs_10"
         android:layout_marginRight="@dimen/vs_10"
         android:gravity="center"
+        android:shadowColor="@color/color_FFFFFF"
+        android:shadowDx="0"
+        android:shadowDy="0"
+        android:shadowRadius="5"
         android:textAlignment="gravity"
         android:textColor="@color/color_FFFFFF"
         android:textSize="@dimen/ts_24"
-        tools:text="11111111111" />
+        android:textStyle="bold"
+        tools:text="11111111111" /><!-- android:shadowColor="@color/color_FFFFFF" -->
 
     <com.owen.tvrecyclerview.widget.TvRecyclerView
         android:id="@+id/mFilterKv"

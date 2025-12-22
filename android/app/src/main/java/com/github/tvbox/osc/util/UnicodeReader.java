@@ -106,4 +106,5 @@ public class UnicodeReader extends Reader {
             throws IOException {
         return this.internalIn.read(cbuf, off, len);
     }
+
 }

@@ -1,123 +1,108 @@
 package com.github.tvbox.osc.util;
 
-import android.app.Activity;
 import android.content.Context;
 
+import com.blankj.utilcode.util.ToastUtils;
 import com.github.tvbox.osc.api.ApiConfig;
 import com.github.tvbox.osc.bean.IJKCode;
-import com.github.tvbox.osc.player.IjkMediaPlayer;
+import com.github.tvbox.osc.player.EXOmPlayer;
+import com.github.tvbox.osc.player.IjkmPlayer;
 import com.github.tvbox.osc.player.render.SurfaceRenderViewFactory;
-import com.github.tvbox.osc.player.thirdparty.Kodi;
-import com.github.tvbox.osc.player.thirdparty.MXPlayer;
-import com.github.tvbox.osc.player.thirdparty.ReexPlayer;
-import com.github.tvbox.osc.player.thirdparty.RemoteTVBox;
-import com.github.tvbox.osc.player.thirdparty.VlcPlayer;
 import com.orhanobut.hawk.Hawk;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.text.DecimalFormat;
-import java.util.ArrayList;
-import java.util.HashMap;
-
-import tv.danmaku.ijk.media.player.IjkLibLoader;
-import xyz.doikki.videoplayer.exo.ExoMediaPlayerFactory;
+import tv.danmaku.ijk.media.player.IjkMediaPlayer;
+import xyz.doikki.videoplayer.aliplayer.AliyunMediaPlayerFactory;
 import xyz.doikki.videoplayer.player.AndroidMediaPlayerFactory;
 import xyz.doikki.videoplayer.player.PlayerFactory;
 import xyz.doikki.videoplayer.player.VideoView;
+import xyz.doikki.videoplayer.render.PlayerViewRenderViewFactory;
 import xyz.doikki.videoplayer.render.RenderViewFactory;
 import xyz.doikki.videoplayer.render.TextureRenderViewFactory;
 
 public class PlayerHelper {
     public static void updateCfg(VideoView videoView, JSONObject playerCfg) {
-        updateCfg(videoView,playerCfg,-1);
+        updateCfg(videoView, playerCfg, -1);
     }
-    public static void updateCfg(VideoView videoView, JSONObject playerCfg,int forcePlayerType) {
+
+    public static void updateCfg(VideoView videoView, JSONObject playerCfg, int forcePlayerType) {
         int playerType = Hawk.get(HawkConfig.PLAY_TYPE, 0);
         int renderType = Hawk.get(HawkConfig.PLAY_RENDER, 0);
-        String ijkCode = Hawk.get(HawkConfig.IJK_CODEC, "硬解码");
+        String ijkCode = Hawk.get(HawkConfig.IJK_CODEC, "软解码");
         int scale = Hawk.get(HawkConfig.PLAY_SCALE, 0);
         try {
             playerType = playerCfg.getInt("pl");
-            renderType = playerCfg.getInt("pr");
+            //就我遇到的问题是 Exo 在 TextureView 黑屏 调整设置中的渲染模式无法生效
+            //renderType = playerCfg.getInt("pr");//该值无法修改，一旦确认该值后续无法进行修改 就是在设置选的 类型无法应用
             ijkCode = playerCfg.getString("ijk");
             scale = playerCfg.getInt("sc");
         } catch (JSONException e) {
             e.printStackTrace();
         }
-        if(forcePlayerType>=0)playerType = forcePlayerType;
+        if (forcePlayerType >= 0) playerType = forcePlayerType;
         IJKCode codec = ApiConfig.get().getIJKCodec(ijkCode);
         PlayerFactory playerFactory;
         if (playerType == 1) {
-            playerFactory = new PlayerFactory<IjkMediaPlayer>() {
+            playerFactory = new PlayerFactory<IjkmPlayer>() {
                 @Override
-                public IjkMediaPlayer createPlayer(Context context) {
-                    return new IjkMediaPlayer(context, codec);
+                public IjkmPlayer createPlayer(Context context) {
+                    return new IjkmPlayer(context, codec);
                 }
             };
-            try {
-                tv.danmaku.ijk.media.player.IjkMediaPlayer.loadLibrariesOnce(new IjkLibLoader() {
-                    @Override
-                    public void loadLibrary(String s) throws UnsatisfiedLinkError, SecurityException {
-                        try {
-                            System.loadLibrary(s);
-                        } catch (Throwable th) {
-                            th.printStackTrace();
-                        }
-                    }
-                });
-            } catch (Throwable th) {
-                th.printStackTrace();
-            }
         } else if (playerType == 2) {
-            playerFactory = ExoMediaPlayerFactory.create();
+            playerFactory = new PlayerFactory<EXOmPlayer>() {
+                @Override
+                public EXOmPlayer createPlayer(Context context) {
+                    return new EXOmPlayer(context);
+                }
+            };
+        } else if (playerType == 3) {
+            playerFactory = AliyunMediaPlayerFactory.create();
         } else {
             playerFactory = AndroidMediaPlayerFactory.create();
         }
         RenderViewFactory renderViewFactory = null;
-        switch (renderType) {
-            case 0:
-            default:
-                renderViewFactory = TextureRenderViewFactory.create();
-                break;
-            case 1:
-                renderViewFactory = SurfaceRenderViewFactory.create();
-                break;
+        if (playerType==2){
+            renderViewFactory = PlayerViewRenderViewFactory.create(renderType);
+        }else{
+            switch (renderType) {
+                case 0:
+                default:
+                    renderViewFactory = TextureRenderViewFactory.create();
+                    break;
+                case 1:
+                    renderViewFactory = SurfaceRenderViewFactory.create();
+                    break;
+            }
         }
-        if(videoView!=null){
-            videoView.setPlayerFactory(playerFactory);
-            videoView.setRenderViewFactory(renderViewFactory);
-            videoView.setScreenScaleType(scale);
-        }
+
+        videoView.setPlayerFactory(playerFactory);
+        videoView.setRenderViewFactory(renderViewFactory);
+        videoView.setScreenScaleType(scale);
     }
 
     public static void updateCfg(VideoView videoView) {
         int playType = Hawk.get(HawkConfig.PLAY_TYPE, 0);
         PlayerFactory playerFactory;
         if (playType == 1) {
-            playerFactory = new PlayerFactory<IjkMediaPlayer>() {
+            playerFactory = new PlayerFactory<IjkmPlayer>() {
                 @Override
-                public IjkMediaPlayer createPlayer(Context context) {
-                    return new IjkMediaPlayer(context, null);
+                public IjkmPlayer createPlayer(Context context) {
+                    return new IjkmPlayer(context, null);
                 }
             };
-            try {
-                tv.danmaku.ijk.media.player.IjkMediaPlayer.loadLibrariesOnce(new IjkLibLoader() {
-                    @Override
-                    public void loadLibrary(String s) throws UnsatisfiedLinkError, SecurityException {
-                        try {
-                            System.loadLibrary(s);
-                        } catch (Throwable th) {
-                            th.printStackTrace();
-                        }
-                    }
-                });
-            } catch (Throwable th) {
-                th.printStackTrace();
-            }
+
         } else if (playType == 2) {
-            playerFactory = ExoMediaPlayerFactory.create();
+            playerFactory = new PlayerFactory<EXOmPlayer>() {
+                @Override
+                public EXOmPlayer createPlayer(Context context) {
+                    return new EXOmPlayer(context);
+                }
+            };
+        } else if (playType == 3) {
+            playerFactory = AliyunMediaPlayerFactory.create();
         } else {
             playerFactory = AndroidMediaPlayerFactory.create();
         }
@@ -136,116 +121,26 @@ public class PlayerHelper {
         videoView.setRenderViewFactory(renderViewFactory);
     }
 
-
     public static void init() {
-        try {
-            tv.danmaku.ijk.media.player.IjkMediaPlayer.loadLibrariesOnce(new IjkLibLoader() {
-                @Override
-                public void loadLibrary(String s) throws UnsatisfiedLinkError, SecurityException {
-                    try {
-                        System.loadLibrary(s);
-                    } catch (Throwable th) {
-                        th.printStackTrace();
-                    }
-                }
-            });
-        } catch (Throwable th) {
-            th.printStackTrace();
-        }
+        IjkMediaPlayer.loadLibrariesOnce(null);
     }
 
     public static String getPlayerName(int playType) {
-        HashMap<Integer, String> playersInfo = getPlayersInfo();
-        if (playersInfo.containsKey(playType)) {
-            return playersInfo.get(playType);
+        if (playType == 1) {
+            return "IJK";
+        } else if (playType == 2) {
+            return "Exo";
+        } else if (playType == 3) {
+            return "阿里";
+        } else if (playType == 10) {
+            return "MX";
+        } else if (playType == 11) {
+            return "Reex";
+        } else if (playType == 12) {
+            return "Kodi";
         } else {
-            return "系统播放器";
+            return "系统";
         }
-    }
-
-    private static HashMap<Integer, String> mPlayersInfo = null;
-    public static HashMap<Integer, String> getPlayersInfo() {
-        if (mPlayersInfo == null) {
-            HashMap<Integer, String> playersInfo = new HashMap<>();
-            playersInfo.put(0, "系统播放器");
-            playersInfo.put(1, "IJK播放器");
-            playersInfo.put(2, "Exo播放器");
-            playersInfo.put(10, "MX播放器");
-            playersInfo.put(11, "Reex播放器");
-            playersInfo.put(12, "Kodi播放器");
-            playersInfo.put(13, "附近TVBox");
-            playersInfo.put(14, "VLC播放器");
-            mPlayersInfo = playersInfo;
-        }
-        return mPlayersInfo;
-    }
-
-    private static HashMap<Integer, Boolean> mPlayersExistInfo = null;
-    public static HashMap<Integer, Boolean> getPlayersExistInfo() {
-        if (mPlayersExistInfo == null) {
-            HashMap<Integer, Boolean> playersExist = new HashMap<>();
-            playersExist.put(0, true);
-            playersExist.put(1, true);
-            playersExist.put(2, true);
-            playersExist.put(10, MXPlayer.getPackageInfo() != null);
-            playersExist.put(11, ReexPlayer.getPackageInfo() != null);
-            playersExist.put(12, Kodi.getPackageInfo() != null);
-            playersExist.put(13, RemoteTVBox.getAvalible() != null);
-            playersExist.put(14, VlcPlayer.getPackageInfo() != null);
-            mPlayersExistInfo = playersExist;
-        }
-        return mPlayersExistInfo;
-    }
-
-    public static Boolean getPlayerExist(int playType) {
-        HashMap<Integer, Boolean> playersExistInfo = getPlayersExistInfo();
-        if (playersExistInfo.containsKey(playType)) {
-            return playersExistInfo.get(playType);
-        } else {
-            return false;
-        }
-    }
-
-    public static ArrayList<Integer> getExistPlayerTypes() {
-        HashMap<Integer, Boolean> playersExistInfo = getPlayersExistInfo();
-        ArrayList<Integer> existPlayers = new ArrayList<>();
-        for(Integer playerType : playersExistInfo.keySet()) {
-            if (playersExistInfo.get(playerType)) {
-                existPlayers.add(playerType);
-            }
-        }
-        return existPlayers;
-    }
-
-    public static Boolean runExternalPlayer(int playerType, Activity activity, String url, String title, String subtitle, HashMap<String, String> headers) {
-        return runExternalPlayer(playerType, activity, url, title, subtitle, headers);
-    }
-
-    public static Boolean runExternalPlayer(int playerType, Activity activity, String url, String title, String subtitle, HashMap<String, String> headers, long progress) {
-        boolean callResult = false;
-        switch (playerType) {
-            case 10: {
-                callResult = MXPlayer.run(activity, url, title, subtitle, headers);
-                break;
-            }
-            case 11: {
-                callResult = ReexPlayer.run(activity, url, title, subtitle, headers);
-                break;
-            }
-            case 12: {
-                callResult = Kodi.run(activity, url, title, subtitle, headers);
-                break;
-            }
-            case 13: {
-                callResult = RemoteTVBox.run(activity, url, title, subtitle, headers);
-                break;
-            }
-            case 14: {
-                callResult = VlcPlayer.run(activity, url, title, subtitle, progress);
-                break;
-            }
-        }
-        return callResult;
     }
 
     public static String getRenderName(int renderType) {
@@ -281,12 +176,12 @@ public class PlayerHelper {
         return scaleText;
     }
 
-    public static String getDisplaySpeed(long speed,boolean show) {
-        if(speed > 1048576)
-            return new DecimalFormat("#.00").format(speed / 1048576d) + "Mb/s";
-        else if(speed > 1024)
-            return (speed / 1024) + "Kb/s";
-        else
-            return speed > 0?speed + "B/s":(show?"0B/s":"");
+    public static String getRootCauseMessage(Throwable th) {
+        for (int i=0; i<10; i++) {
+            if (th.getCause() == null) return th.getLocalizedMessage();
+            else th = th.getCause();
+        }
+        return th.getLocalizedMessage();
     }
+
 }

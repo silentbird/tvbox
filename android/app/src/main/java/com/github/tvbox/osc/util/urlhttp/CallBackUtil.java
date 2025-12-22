@@ -22,28 +22,30 @@ public abstract class CallBackUtil<T> {
     static Handler mMainHandler = new Handler(Looper.getMainLooper());
 
 
-    public  void onProgress(float progress, long total ){}
+    public void onProgress(float progress, long total) {
+    }
 
-    void onError(final RealResponse response){
+    void onError(final RealResponse response) {
 
         final String errorMessage;
-        if(response.inputStream != null){
+        if (response.inputStream != null) {
             errorMessage = getRetString(response.inputStream);
-        }else if(response.errorStream != null) {
+        } else if (response.errorStream != null) {
             errorMessage = getRetString(response.errorStream);
-        }else if(response.exception != null) {
+        } else if (response.exception != null) {
             errorMessage = response.exception.getMessage();
-        }else {
+        } else {
             errorMessage = "";
         }
         mMainHandler.post(new Runnable() {
             @Override
             public void run() {
-                onFailure(response.code,errorMessage);
+                onFailure(response.code, errorMessage);
             }
         });
     }
-    void onSeccess(RealResponse response){
+
+    void onSeccess(RealResponse response) {
         final T obj = onParseResponse(response);
         mMainHandler.post(new Runnable() {
             @Override
@@ -53,7 +55,6 @@ public abstract class CallBackUtil<T> {
         });
     }
 
-
     /**
      * 解析response，执行在子线程
      */
@@ -62,14 +63,12 @@ public abstract class CallBackUtil<T> {
     /**
      * 访问网络失败后被调用，执行在UI线程
      */
-    public abstract void onFailure(int code,String errorMessage);
+    public abstract void onFailure(int code, String errorMessage);
 
     /**
-     *
      * 访问网络成功后被调用，执行在UI线程
      */
     public abstract void onResponse(T response);
-
 
 
     public static abstract class CallBackDefault extends CallBackUtil<RealResponse> {
@@ -90,31 +89,36 @@ public abstract class CallBackUtil<T> {
         }
     }
 
-
     public static abstract class CallBackBitmap extends CallBackUtil<Bitmap> {
         private int mTargetWidth;
         private int mTargetHeight;
 
-        public CallBackBitmap(){};
-        public CallBackBitmap(int targetWidth,int targetHeight){
+        public CallBackBitmap() {
+        }
+
+        ;
+
+        public CallBackBitmap(int targetWidth, int targetHeight) {
             mTargetWidth = targetWidth;
             mTargetHeight = targetHeight;
-        };
-        public CallBackBitmap(ImageView imageView){
+        }
+
+        public CallBackBitmap(ImageView imageView) {
             int width = imageView.getWidth();
             int height = imageView.getHeight();
-            if(width <=0 || height <=0){
+            if (width <= 0 || height <= 0) {
                 throw new RuntimeException("无法获取ImageView的width或height");
             }
             mTargetWidth = width;
             mTargetHeight = height;
-        };
+        }
+
         @Override
         public Bitmap onParseResponse(RealResponse response) {
-            if(mTargetWidth ==0 || mTargetHeight == 0){
+            if (mTargetWidth == 0 || mTargetHeight == 0) {
                 return BitmapFactory.decodeStream(response.inputStream);
-            }else {
-                return getZoomBitmap( response.inputStream);
+            } else {
+                return getZoomBitmap(response.inputStream);
             }
         }
 
@@ -131,20 +135,20 @@ public abstract class CallBackUtil<T> {
             BitmapFactory.Options options = new BitmapFactory.Options();
             options.inJustDecodeBounds = true;
 
-            BitmapFactory.decodeByteArray(data,0,data.length,options);
+            BitmapFactory.decodeByteArray(data, 0, data.length, options);
             int picWidth = options.outWidth;
             int picHeight = options.outHeight;
             int sampleSize = 1;
             int heightRatio = (int) Math.floor((float) picWidth / (float) mTargetWidth);
             int widthRatio = (int) Math.floor((float) picHeight / (float) mTargetHeight);
-            if (heightRatio > 1 || widthRatio > 1){
-                sampleSize = Math.max(heightRatio,widthRatio);
+            if (heightRatio > 1 || widthRatio > 1) {
+                sampleSize = Math.max(heightRatio, widthRatio);
             }
             options.inSampleSize = sampleSize;
             options.inJustDecodeBounds = false;
-            Bitmap bitmap = BitmapFactory.decodeByteArray(data,0,data.length,options);
+            Bitmap bitmap = BitmapFactory.decodeByteArray(data, 0, data.length, options);
 
-            if(bitmap == null){
+            if (bitmap == null) {
                 throw new RuntimeException("Failed to decode stream.");
             }
             return bitmap;
@@ -172,41 +176,41 @@ public abstract class CallBackUtil<T> {
         private final String mdestFileName;
 
         /**
-         *
          * @param destFileDir:文件目录
          * @param destFileName：文件名
          */
-        public CallBackFile(String destFileDir, String destFileName){
+        public CallBackFile(String destFileDir, String destFileName) {
             mDestFileDir = destFileDir;
             mdestFileName = destFileName;
         }
+
         @Override
         public File onParseResponse(RealResponse response) {
 
             InputStream is = null;
-            byte[] buf = new byte[1024*8];
+            byte[] buf = new byte[1024 * 8];
             int len = 0;
             FileOutputStream fos = null;
-            try{
+            try {
                 is = response.inputStream;
                 final long total = response.contentLength;
 
                 long sum = 0;
 
                 File dir = new File(mDestFileDir);
-                if (!dir.exists()){
+                if (!dir.exists()) {
                     dir.mkdirs();
                 }
                 File file = new File(dir, mdestFileName);
                 fos = new FileOutputStream(file);
-                while ((len = is.read(buf)) != -1){
+                while ((len = is.read(buf)) != -1) {
                     sum += len;
                     fos.write(buf, 0, len);
                     final long finalSum = sum;
                     mMainHandler.post(new Runnable() {
                         @Override
                         public void run() {
-                            onProgress(finalSum * 100.0f / total,total);
+                            onProgress(finalSum * 100.0f / total, total);
                         }
                     });
                 }
@@ -216,22 +220,21 @@ public abstract class CallBackUtil<T> {
 
             } catch (Exception e) {
                 e.printStackTrace();
-            } finally{
-                try{
+            } finally {
+                try {
                     fos.close();
                     if (is != null) is.close();
-                } catch (IOException e){
+                } catch (IOException e) {
                 }
-                try{
+                try {
                     if (fos != null) fos.close();
-                } catch (IOException e){
+                } catch (IOException e) {
                 }
 
             }
             return null;
         }
     }
-
 
     private static String getRetString(InputStream is) {
         String buf;

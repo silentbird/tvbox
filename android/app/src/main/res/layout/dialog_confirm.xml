@@ -23,12 +23,17 @@
             android:layout_height="wrap_content"
             android:layout_marginBottom="@dimen/vs_10"
             android:gravity="center"
-            android:lineSpacingMultiplier="0"            
+            android:lineSpacingMultiplier="0"
+            android:shadowColor="@color/color_FF000000"
+            android:shadowDx="0"
+            android:shadowDy="0"
+            android:shadowRadius="5"
             android:singleLine="true"
-            android:textColor="@color/color_CC000000"
+            android:textColor="@color/color_FFFFFF"
             android:textSize="@dimen/ts_26"
             android:textStyle="bold"
-            android:text="确定全部删除 ?" />
+            android:text="@string/dia_confirm"
+            tools:text="@string/dia_confirm" />
 
         <TableRow
             android:layout_width="match_parent"
@@ -50,7 +55,7 @@
             android:shadowDx="0"
             android:shadowDy="0"
             android:shadowRadius="5"
-            android:text="是"
+            android:text="Yes"
             android:textColor="@color/color_FFFFFF"
             android:textColorHint="@color/color_FFFFFF_50"
             android:textSize="@dimen/ts_20" />
@@ -71,7 +76,7 @@
             android:shadowDx="0"
             android:shadowDy="0"
             android:shadowRadius="5"
-            android:text="否"
+            android:text="No"
             android:textColor="@color/color_FFFFFF"
             android:textColorHint="@color/color_FFFFFF_50"
             android:textSize="@dimen/ts_20" />

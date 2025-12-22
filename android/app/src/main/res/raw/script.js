@@ -6,6 +6,18 @@ function api() {
     doAction('api', { url: $('#diy_api_url').val() });
 }
 
+function live() {
+    doAction('live', { url: $('#diy_live_url').val() });
+}
+
+function epg() {
+    doAction('epg', { url: $('#diy_epg_url').val() });
+}
+
+function proxys() {
+    doAction('proxys', { url: $('#diy_proxy_server').val() });
+}
+
 function push() {
     doAction('push', { url: $('#push_url').val() });
 }
@@ -123,7 +135,10 @@ function listFile(path) {
             }
         });
         $('#loadingToast').hide();
-    })
+    }).fail(function () {
+        warnToast('读取本地文件失败，可能没有存储权限');
+        $('#loadingToast').hide();
+    });
 }
 
 function warnToast(msg) {
@@ -135,6 +150,7 @@ function warnToast(msg) {
 }
 
 function uploadFile() {
+    $('#file_uploader').val("");
     $('#file_uploader').click();
 }
 

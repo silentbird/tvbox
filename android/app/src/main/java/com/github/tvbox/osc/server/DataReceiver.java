@@ -12,8 +12,15 @@ public interface DataReceiver {
      */
     void onTextReceived(String text);
 
-
     void onApiReceived(String url);
 
+    void onLiveReceived(String url);
+
+    void onEpgReceived(String url);
+
+    void onProxysReceived(String url);
+
     void onPushReceived(String url);
+
+    void onMirrorReceived(String id, String sourceKey);
 }

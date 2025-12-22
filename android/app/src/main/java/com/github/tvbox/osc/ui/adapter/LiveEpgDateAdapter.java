@@ -6,14 +6,12 @@ import android.widget.TextView;
 import com.chad.library.adapter.base.BaseQuickAdapter;
 import com.chad.library.adapter.base.BaseViewHolder;
 import com.github.tvbox.osc.R;
-import com.github.tvbox.osc.bean.LiveChannelGroup;
+import com.github.tvbox.osc.base.BaseActivity;
 import com.github.tvbox.osc.bean.LiveEpgDate;
 
 import java.util.ArrayList;
 
-
 public class LiveEpgDateAdapter extends BaseQuickAdapter<LiveEpgDate, BaseViewHolder> {
-
     private int selectedIndex = -1;
     private int focusedIndex = -1;
 
@@ -27,9 +25,13 @@ public class LiveEpgDateAdapter extends BaseQuickAdapter<LiveEpgDate, BaseViewHo
         tvGroupName.setText(item.getDatePresented());
         tvGroupName.setBackgroundColor(Color.TRANSPARENT);
         if (item.getIndex() == selectedIndex && item.getIndex() != focusedIndex) {
-            tvGroupName.setTextColor(mContext.getResources().getColor(R.color.color_1890FF));
-        }else {
-            tvGroupName.setTextColor(mContext.getResources().getColor(R.color.color_CCFFFFFF));
+            // takagen99: Added Theme Color
+//            tvGroupName.setTextColor(mContext.getResources().getColor(R.color.color_theme));
+            tvGroupName.setTextColor(((BaseActivity) mContext).getThemeColor());
+        } else if (item.getIndex() == selectedIndex && item.getIndex() == focusedIndex) {
+            tvGroupName.setTextColor(mContext.getResources().getColor(R.color.color_FFFFFF));
+        } else {
+            tvGroupName.setTextColor(mContext.getResources().getColor(R.color.color_FFFFFF));
         }
     }
 
@@ -48,11 +50,13 @@ public class LiveEpgDateAdapter extends BaseQuickAdapter<LiveEpgDate, BaseViewHo
     }
 
     public void setFocusedIndex(int focusedIndex) {
-        int preSelectedIndex = this.selectedIndex;
+        int preFocusedIndex = this.focusedIndex;
         this.focusedIndex = focusedIndex;
-        if(preSelectedIndex != -1)
-            notifyItemChanged(preSelectedIndex);
+        if (preFocusedIndex != -1)
+            notifyItemChanged(preFocusedIndex);
         if (this.focusedIndex != -1)
             notifyItemChanged(this.focusedIndex);
+        else if (this.selectedIndex != -1)
+            notifyItemChanged(this.selectedIndex);
     }
 }

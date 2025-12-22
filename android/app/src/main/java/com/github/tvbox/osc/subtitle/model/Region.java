@@ -22,7 +22,6 @@
  * DEALINGS IN THE SOFTWARE.
  *
  * @author J. David REQUEJO
- *
  */
 
 package com.github.tvbox.osc.subtitle.model;

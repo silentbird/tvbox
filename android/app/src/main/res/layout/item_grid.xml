@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 分类略缩图 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
-    android:background="@drawable/shape_user_focus"
+    android:background="@drawable/shape_thumb_radius"
     android:focusable="true"
     android:padding="@dimen/vs_1">
 
@@ -31,7 +32,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="@dimen/vs_5"
                 android:layout_marginRight="@dimen/vs_5"
-                android:background="@drawable/shape_thumb_bottom_name"
+                android:background="@drawable/shape_thumb_year"
                 android:ellipsize="end"
                 android:gravity="center"
                 android:paddingLeft="@dimen/vs_5"
@@ -46,7 +47,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="@dimen/vs_5"
                 android:layout_marginRight="@dimen/vs_5"
-                android:background="@drawable/shape_thumb_lang"
+                android:background="@drawable/shape_thumb_year"
                 android:ellipsize="end"
                 android:gravity="center"
                 android:paddingLeft="@dimen/vs_5"
@@ -124,7 +125,7 @@
                 android:textSize="@dimen/ts_16"
                 android:visibility="gone" />
         </LinearLayout>
-        
+
         <FrameLayout
             android:id="@+id/delFrameLayout"
             android:layout_width="match_parent"
@@ -141,6 +142,6 @@
                 android:layout_marginBottom="@dimen/vs_20"
                 android:src="@drawable/icon_delete" />
         </FrameLayout>
-        
+
     </FrameLayout>
 </FrameLayout>

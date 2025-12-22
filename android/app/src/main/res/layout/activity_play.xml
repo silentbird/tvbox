@@ -11,6 +11,12 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <master.flame.danmaku.ui.widget.DanmakuView
+        android:id="@+id/danmaku"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
     <ProgressBar
         android:id="@+id/play_loading"
         android:layout_width="@dimen/vs_50"
@@ -38,7 +44,7 @@
         android:layout_height="wrap_content"
         android:layout_gravity="center"
         android:layout_marginTop="@dimen/vs_50"
-        android:text="1111111111111"
-        android:textColor="@color/color_CCFFFFFF"
+        android:text="Now Loading"
+        android:textColor="@color/color_FFFFFF_80"
         android:textSize="@dimen/ts_24" />
 </FrameLayout>

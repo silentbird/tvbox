@@ -44,9 +44,9 @@ public class SettingActivity extends BaseActivity {
     private Handler mHandler = new Handler();
     private String homeSourceKey;
     private String currentApi;
+    private String currentLive;
     private int homeRec;
     private int dnsOpt;
-    private String currentLiveApi;
 
     @Override
     protected int getLayoutResID() {
@@ -85,7 +85,7 @@ public class SettingActivity extends BaseActivity {
             public void onItemPreSelected(TvRecyclerView parent, View itemView, int position) {
                 if (itemView != null) {
                     TextView tvName = itemView.findViewById(R.id.tvName);
-                    tvName.setTextColor(getResources().getColor(R.color.color_CCFFFFFF));
+                    tvName.setTextColor(getResources().getColor(R.color.color_FFFFFF_70));
                 }
             }
 
@@ -108,10 +108,10 @@ public class SettingActivity extends BaseActivity {
 
     private void initData() {
         currentApi = Hawk.get(HawkConfig.API_URL, "");
+        currentLive = Hawk.get(HawkConfig.LIVE_URL, "");
         homeSourceKey = ApiConfig.get().getHomeSourceBean().getKey();
         homeRec = Hawk.get(HawkConfig.HOME_REC, 0);
         dnsOpt = Hawk.get(HawkConfig.DOH_URL, 0);
-        currentLiveApi = Hawk.get(HawkConfig.LIVE_API_URL, "");
         List<String> sortList = new ArrayList<>();
         sortList.add("设置其他");
         sortAdapter.setNewData(sortList);
@@ -125,7 +125,7 @@ public class SettingActivity extends BaseActivity {
         mViewPager.setCurrentItem(0);
     }
 
-    private Runnable mDataRunnable = new Runnable() {
+    private final Runnable mDataRunnable = new Runnable() {
         @Override
         public void run() {
             if (sortChange) {
@@ -138,7 +138,7 @@ public class SettingActivity extends BaseActivity {
         }
     };
 
-    private Runnable mDevModeRun = new Runnable() {
+    private final Runnable mDevModeRun = new Runnable() {
         @Override
         public void run() {
             devMode = "";
@@ -179,26 +179,20 @@ public class SettingActivity extends BaseActivity {
 
     @Override
     public void onBackPressed() {
-        if (currentApi.equals(Hawk.get(HawkConfig.API_URL, ""))) {
-            if(dnsOpt != Hawk.get(HawkConfig.DOH_URL, 0)){
-                AppManager.getInstance().finishAllActivity();
-                jumpActivity(HomeActivity.class, createBundle());
-            }
-            else if ((homeSourceKey != null && !homeSourceKey.equals(Hawk.get(HawkConfig.HOME_API, "")))  || homeRec != Hawk.get(HawkConfig.HOME_REC, 0)) {
-                jumpActivity(HomeActivity.class, createBundle());
-            }else if(!currentLiveApi.equals(Hawk.get(HawkConfig.LIVE_API_URL, ""))){
+        if ((homeSourceKey != null && !homeSourceKey.equals(Hawk.get(HawkConfig.HOME_API, ""))) ||
+                !currentApi.equals(Hawk.get(HawkConfig.API_URL, "")) || !currentLive.equals(Hawk.get(HawkConfig.LIVE_URL, "")) ||
+                homeRec != Hawk.get(HawkConfig.HOME_REC, 0) ||
+                dnsOpt != Hawk.get(HawkConfig.DOH_URL, 0)) {
+            AppManager.getInstance().finishAllActivity();
+            if (currentApi.equals(Hawk.get(HawkConfig.API_URL, "")) & (currentLive.equals(Hawk.get(HawkConfig.LIVE_URL, "")))) {
+                Bundle bundle = new Bundle();
+                bundle.putBoolean("useCache", true);
+                jumpActivity(HomeActivity.class, bundle);
+            } else {
                 jumpActivity(HomeActivity.class);
             }
         } else {
-            AppManager.getInstance().finishAllActivity();
-            jumpActivity(HomeActivity.class);
+            super.onBackPressed();
         }
-        super.onBackPressed();
-    }
-
-    private Bundle createBundle() {
-        Bundle bundle = new Bundle();
-        bundle.putBoolean("useCache", true);
-        return bundle;
     }
 }

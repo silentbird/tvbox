@@ -1,11 +1,7 @@
 package com.github.tvbox.osc.bean;
 
-import com.github.tvbox.osc.util.HawkConfig;
-import com.orhanobut.hawk.Hawk;
-
 import java.text.ParsePosition;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Date;
 import java.util.TimeZone;
 
@@ -25,7 +21,7 @@ public class Epginfo {
     public String currentEpgDate = null;
     SimpleDateFormat timeFormat = new SimpleDateFormat("yyyy-MM-dd");
 
-    public Epginfo(Date Date,String str, Date date, String str1, String str2,int pos) {
+    public Epginfo(Date Date, String str, Date date, String str1, String str2, int pos) {
         epgDate = Date;
         currentEpgDate = timeFormat.format(epgDate);
         title = str;
