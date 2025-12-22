@@ -5,46 +5,61 @@ class HomeViewModel: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var showToast: Bool = false
     @Published var toastMessage: String = ""
-    @Published var categories: [SourceCategory] = []
-    @Published var videos: [VideoItem] = []
+    @Published var categories: [MovieCategory] = []
+    @Published var videos: [MovieItem] = []
+    @Published var categoryVideos: [MovieItem] = []
     @Published var searchText: String = ""
     @Published var error: Error?
     
     private var cancellables = Set<AnyCancellable>()
-    private let sourceManager = SourceManager.shared
+    private let apiConfig = ApiConfig.shared
     private let httpUtil = HttpUtil.shared
     
-    init() {
-        loadCategories()
-    }
+    init() {}
     
     func loadCategories() {
+        guard let currentSite = apiConfig.currentSite else {
+            showToast(message: "请先选择站点")
+            return
+        }
+        
         isLoading = true
-        sourceManager.fetchHomeData { [weak self] result in
-            DispatchQueue.main.async {
-                self?.isLoading = false
-                switch result {
-                case .success(let sourceCategories):
-                    self?.categories = sourceCategories
-                case .failure(let error):
-                    self?.error = error
+        
+        Task {
+            do {
+                let result = try await fetchHomeData(site: currentSite)
+                await MainActor.run {
+                    self.categories = result.categories
+                    self.videos = result.videos
+                    self.isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.error = error
+                    self.isLoading = false
+                    self.showToast(message: error.localizedDescription)
                 }
             }
         }
     }
     
-    func loadVideos(for category: SourceCategory) {
-        isLoading = true
-        error = nil
+    func loadVideos(for category: MovieCategory) {
+        guard let currentSite = apiConfig.currentSite else { return }
         
-        sourceManager.fetchVideos(category: category) { [weak self] result in
-            DispatchQueue.main.async {
-                self?.isLoading = false
-                switch result {
-                case .success(let videos):
-                    self?.videos = videos
-                case .failure(let error):
-                    self?.error = error
+        isLoading = true
+        categoryVideos.removeAll()
+        
+        Task {
+            do {
+                let movies = try await fetchCategoryVideos(site: currentSite, category: category)
+                await MainActor.run {
+                    self.categoryVideos = movies
+                    self.isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.error = error
+                    self.isLoading = false
                 }
             }
         }
@@ -52,15 +67,24 @@ class HomeViewModel: ObservableObject {
     
     func search() {
         guard !searchText.isEmpty else { return }
+        guard let currentSite = apiConfig.currentSite else {
+            showToast(message: "请先选择站点")
+            return
+        }
+        
         isLoading = true
-        sourceManager.searchVideos(query: searchText) { [weak self] result in
-            DispatchQueue.main.async {
-                self?.isLoading = false
-                switch result {
-                case .success(let videos):
-                    self?.videos = videos
-                case .failure(let error):
-                    self?.showToast(message: error.localizedDescription)
+        
+        Task {
+            do {
+                let results = try await searchVideos(site: currentSite, keyword: searchText)
+                await MainActor.run {
+                    self.videos = results
+                    self.isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.showToast(message: error.localizedDescription)
+                    self.isLoading = false
                 }
             }
         }
@@ -71,102 +95,86 @@ class HomeViewModel: ObservableObject {
         showToast = true
     }
     
-    func getCategories() -> AnyPublisher<[SourceCategory], Error> {
-        return Future<[SourceCategory], Error> { promise in
-            self.sourceManager.fetchHomeData { result in
-                switch result {
-                case .success(let sourceCategories):
-                    promise(.success(sourceCategories))
-                case .failure(let error):
-                    promise(.failure(error))
-                }
-            }
+    // MARK: - API Calls
+    
+    private func fetchHomeData(site: SiteBean) async throws -> (categories: [MovieCategory], videos: [MovieItem]) {
+        // 根据站点类型调用不同的接口
+        // type: 0 = xml, 1 = json, 3 = jar, 4 = remote
+        
+        guard let url = URL(string: site.api) else {
+            throw ConfigError.invalidUrl
         }
-        .eraseToAnyPublisher()
+        
+        // 对于 JSON 类型的站点
+        if site.type == 1 {
+            let jsonString = try await httpUtil.string(url: url)
+            
+            guard let data = jsonString.data(using: .utf8) else {
+                throw ConfigError.invalidData
+            }
+            
+            let response = try JSONDecoder().decode(MovieCategoryResponse.self, from: data)
+            
+            return (
+                categories: response.classData ?? [],
+                videos: response.list ?? []
+            )
+        }
+        
+        // 对于 XML 类型，需要解析 XML
+        if site.type == 0 {
+            // TODO: 实现 XML 解析
+        }
+        
+        // 对于 JAR 类型，需要调用 Spider
+        if site.type == 3 {
+            // TODO: 实现 Spider 调用
+        }
+        
+        return (categories: [], videos: [])
     }
     
-    func getVideos(category: SourceCategory.CategoryType) -> AnyPublisher<[VideoItem], Error> {
-        return Future<[VideoItem], Error> { promise in
-            let sourceCategory = SourceCategory(
-                id: "",
-                name: "",
-                type: category,
-                api: "",
-                searchable: 1,
-                quickSearch: 1,
-                filterable: 1,
-                playerUrl: "",
-                ext: "",
-                jar: "",
-                playerType: 0,
-                categories: [],
-                clickSelector: ""
-            )
-            
-            self.sourceManager.fetchVideos(category: sourceCategory) { result in
-                switch result {
-                case .success(let videos):
-                    promise(.success(videos))
-                case .failure(let error):
-                    promise(.failure(error))
-                }
-            }
+    private func fetchCategoryVideos(site: SiteBean, category: MovieCategory) async throws -> [MovieItem] {
+        guard let baseUrl = URL(string: site.api) else {
+            throw ConfigError.invalidUrl
         }
-        .eraseToAnyPublisher()
+        
+        // 添加分类参数
+        let url = baseUrl.appendingQueryParameters(["t": category.tid, "ac": "videolist"])
+        
+        if site.type == 1 {
+            let jsonString = try await httpUtil.string(url: url)
+            
+            guard let data = jsonString.data(using: .utf8) else {
+                throw ConfigError.invalidData
+            }
+            
+            let response = try JSONDecoder().decode(MovieListResponse.self, from: data)
+            return response.list ?? []
+        }
+        
+        return []
+    }
+    
+    private func searchVideos(site: SiteBean, keyword: String) async throws -> [MovieItem] {
+        guard let baseUrl = URL(string: site.api) else {
+            throw ConfigError.invalidUrl
+        }
+        
+        let encodedKeyword = keyword.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? keyword
+        let url = baseUrl.appendingQueryParameters(["wd": encodedKeyword, "ac": "videolist"])
+        
+        if site.type == 1 {
+            let jsonString = try await httpUtil.string(url: url)
+            
+            guard let data = jsonString.data(using: .utf8) else {
+                throw ConfigError.invalidData
+            }
+            
+            let response = try JSONDecoder().decode(MovieListResponse.self, from: data)
+            return response.list ?? []
+        }
+        
+        return []
     }
 }
-
-// API服务类
-class APIService {
-    private let httpUtil = HttpUtil.shared
-    
-    func getCategories() -> AnyPublisher<[SourceCategory], Error> {
-        return Future<[SourceCategory], Error> { promise in
-            let url = URL(string: "/api/categories")!
-            let callback = DataCallback<[SourceCategory]> { result in
-                switch result {
-                case .success(let categories):
-                    promise(.success(categories))
-                case .failure(let error):
-                    promise(.failure(error))
-                }
-            }
-            self.httpUtil.get(url: url, callback: callback)
-        }
-        .eraseToAnyPublisher()
-    }
-    
-    func getVideos(category: SourceCategory.CategoryType) -> AnyPublisher<[VideoItem], Error> {
-        return Future<[VideoItem], Error> { promise in
-            let url = URL(string: "/api/videos")!
-            let parameters = ["category": String(category.rawValue)]
-            let callback = DataCallback<[VideoItem]> { result in
-                switch result {
-                case .success(let videos):
-                    promise(.success(videos))
-                case .failure(let error):
-                    promise(.failure(error))
-                }
-            }
-            self.httpUtil.get(url: url, parameters: parameters, callback: callback)
-        }
-        .eraseToAnyPublisher()
-    }
-    
-    func searchVideos(query: String) -> AnyPublisher<[VideoItem], Error> {
-        return Future<[VideoItem], Error> { promise in
-            let url = URL(string: "/api/search")!
-            let parameters = ["query": query]
-            let callback = DataCallback<[VideoItem]> { result in
-                switch result {
-                case .success(let videos):
-                    promise(.success(videos))
-                case .failure(let error):
-                    promise(.failure(error))
-                }
-            }
-            self.httpUtil.get(url: url, parameters: parameters, callback: callback)
-        }
-        .eraseToAnyPublisher()
-    }
-} 

@@ -1,153 +1,262 @@
 import SwiftUI
 
 struct HomeView: View {
+    @ObservedObject private var apiConfig = ApiConfig.shared
     @StateObject private var viewModel = HomeViewModel()
-    @State private var selectedCategory: SourceCategory?
+    @State private var selectedCategory: MovieCategory?
     
     var body: some View {
         NavigationView {
-            if let category = selectedCategory {
-                VideoListView(category: category, viewModel: viewModel)
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 16) {
-                        // 搜索框
-                        SearchBar(text: $viewModel.searchText, onSearch: viewModel.search)
-                            .padding(.horizontal)
-                        
-                        // 分类列表
-                        ForEach(viewModel.categories) { category in
-                            CategoryRow(category: category)
-                                .onTapGesture {
-                                    selectedCategory = category
-                                    viewModel.loadVideos(for: category)
-                                }
-                        }
-                        .padding()
+            Group {
+                if apiConfig.configLoaded {
+                    contentView
+                } else if apiConfig.isLoading {
+                    loadingView
+                } else {
+                    emptyView
+                }
+            }
+            .navigationTitle(apiConfig.currentSite?.name ?? "首页")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    NavigationLink(destination: SearchView()) {
+                        Image(systemName: "magnifyingglass")
                     }
                 }
-                .navigationTitle("首页")
             }
         }
         .navigationViewStyle(.stack)
         .toast(message: viewModel.toastMessage, isShowing: $viewModel.showToast)
         .onAppear {
+            if apiConfig.configLoaded {
+                viewModel.loadCategories()
+            }
+        }
+        .onChange(of: apiConfig.currentSite?.key) { _ in
             viewModel.loadCategories()
         }
     }
-}
-
-struct SearchBar: View {
-    @Binding var text: String
-    var onSearch: () -> Void
     
-    var body: some View {
-        HStack {
-            Image(systemName: "magnifyingglass")
-                .foregroundColor(.gray)
-            
-            TextField("搜索视频", text: $text, onCommit: onSearch)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-            
-            if !text.isEmpty {
-                Button(action: {
-                    text = ""
-                }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.gray)
+    // MARK: - Content View
+    private var contentView: some View {
+        ScrollView {
+            LazyVStack(spacing: 16) {
+                // 站点选择器
+                if apiConfig.filterableSites.count > 1 {
+                    siteSelector
+                }
+                
+                // 分类列表
+                if !viewModel.categories.isEmpty {
+                    categoryGrid
+                }
+                
+                // 推荐内容
+                if !viewModel.videos.isEmpty {
+                    recommendSection
                 }
             }
+            .padding(.vertical)
+        }
+        .refreshable {
+            viewModel.loadCategories()
         }
     }
-}
-
-struct CategoryRow: View {
-    let category: SourceCategory
     
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(category.name)
-                .font(.headline)
+    // MARK: - Site Selector
+    private var siteSelector: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(apiConfig.filterableSites) { site in
+                    Button(action: { apiConfig.setCurrentSite(site) }) {
+                        Text(site.name)
+                            .font(.subheadline)
+                            .fontWeight(apiConfig.currentSite?.key == site.key ? .semibold : .regular)
+                            .foregroundColor(apiConfig.currentSite?.key == site.key ? .white : .primary)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(apiConfig.currentSite?.key == site.key ? Color.blue : Color(.systemGray5))
+                            .cornerRadius(18)
+                    }
+                }
+            }
+            .padding(.horizontal)
+        }
+    }
+    
+    // MARK: - Category Grid
+    private var categoryGrid: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("分类")
+                .font(.title3)
+                .fontWeight(.bold)
+                .padding(.horizontal)
             
-            if !category.categories.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(category.categories, id: \.self) { subCategory in
-                            Text(subCategory)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(Color.blue.opacity(0.1))
-                                .cornerRadius(12)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(viewModel.categories) { category in
+                        NavigationLink(destination: CategoryListView(category: category, viewModel: viewModel)) {
+                            VStack(spacing: 6) {
+                                Image(systemName: categoryIcon(for: category.name))
+                                    .font(.title2)
+                                    .foregroundColor(.blue)
+                                
+                                Text(category.name)
+                                    .font(.caption)
+                                    .foregroundColor(.primary)
+                                    .lineLimit(1)
+                            }
+                            .frame(width: 70, height: 70)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(12)
                         }
                     }
                 }
+                .padding(.horizontal)
             }
         }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(radius: 2)
+    }
+    
+    // MARK: - Recommend Section
+    private var recommendSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("推荐")
+                .font(.title3)
+                .fontWeight(.bold)
+                .padding(.horizontal)
+            
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 12)], spacing: 12) {
+                ForEach(viewModel.videos) { movie in
+                    NavigationLink(destination: DetailView(movie: movie)) {
+                        MovieItemCard(movie: movie)
+                    }
+                }
+            }
+            .padding(.horizontal)
+        }
+    }
+    
+    // MARK: - Loading View
+    private var loadingView: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .scaleEffect(1.5)
+            Text("加载中...")
+                .foregroundColor(.secondary)
+        }
+    }
+    
+    // MARK: - Empty View
+    private var emptyView: some View {
+        ContentUnavailableView(
+            "未配置数据源",
+            systemImage: "exclamationmark.triangle",
+            description: Text("请在设置中配置API地址")
+        )
+    }
+    
+    // MARK: - Helper
+    private func categoryIcon(for name: String) -> String {
+        switch name {
+        case let n where n.contains("电影"): return "film"
+        case let n where n.contains("电视") || n.contains("连续剧") || n.contains("剧集"): return "tv"
+        case let n where n.contains("动漫") || n.contains("动画"): return "sparkles.tv"
+        case let n where n.contains("综艺"): return "music.mic"
+        case let n where n.contains("纪录"): return "doc.text.image"
+        case let n where n.contains("体育"): return "sportscourt"
+        case let n where n.contains("音乐"): return "music.note"
+        default: return "play.rectangle"
+        }
     }
 }
 
-struct VideoDetailView: View {
-    let video: VideoItem
+// MARK: - Movie Item Card
+struct MovieItemCard: View {
+    let movie: MovieItem
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // 封面
+            ZStack(alignment: .topTrailing) {
+                AsyncImage(url: URL(string: movie.vodPic ?? "")) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    case .failure:
+                        placeholderImage
+                    case .empty:
+                        placeholderImage
+                    @unknown default:
+                        placeholderImage
+                    }
+                }
+                .frame(height: 180)
+                .clipped()
+                
+                // 备注标签
+                if let remarks = movie.vodRemarks, !remarks.isEmpty {
+                    Text(remarks)
+                        .font(.caption2)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Color.blue.opacity(0.9))
+                        .cornerRadius(4)
+                        .padding(6)
+                }
+            }
+            
+            // 标题
+            Text(movie.vodName)
+                .font(.subheadline)
+                .foregroundColor(.primary)
+                .lineLimit(1)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 8)
+        }
+        .background(Color(.systemBackground))
+        .cornerRadius(10)
+        .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+    }
+    
+    private var placeholderImage: some View {
+        LinearGradient(
+            colors: [Color.blue.opacity(0.3), Color.purple.opacity(0.3)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+}
+
+// MARK: - Category List View
+struct CategoryListView: View {
+    let category: MovieCategory
+    @ObservedObject var viewModel: HomeViewModel
+    
+    private let columns = [
+        GridItem(.adaptive(minimum: 140), spacing: 12)
+    ]
     
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                // 大图
-                AsyncImage(url: URL(string: video.thumbnail)) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    Color.gray
-                }
-                .frame(height: 300)
-                .clipped()
-                
-                VStack(alignment: .leading, spacing: 12) {
-                    // 标题
-                    Text(video.title)
-                        .font(.title)
-                        .bold()
-                    
-                    // 基本信息
-                    HStack {
-                        Text("\(video.year)年")
-                        Text(video.duration)
-                    }
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
-                    
-                    // 评分
-                    HStack {
-                        Image(systemName: "star.fill")
-                            .foregroundColor(.yellow)
-                        Text(String(format: "%.1f", video.rating))
-                    }
-                    .font(.subheadline)
-                    
-                    // 简介
-                    Text(video.description)
-                        .font(.body)
-                        .padding(.top, 8)
-                    
-                    // 标签
-                    if !video.tags.isEmpty {
-                        Text("标签：\(video.tags.joined(separator: "、"))")
-                            .font(.subheadline)
-                            .padding(.top, 8)
+            LazyVGrid(columns: columns, spacing: 12) {
+                ForEach(viewModel.categoryVideos) { movie in
+                    NavigationLink(destination: DetailView(movie: movie)) {
+                        MovieItemCard(movie: movie)
                     }
                 }
-                .padding()
             }
+            .padding()
         }
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle(category.name)
+        .onAppear {
+            viewModel.loadVideos(for: category)
+        }
     }
 }
 
 #Preview {
     HomeView()
-} 
+}
