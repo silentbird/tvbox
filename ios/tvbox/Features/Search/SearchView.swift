@@ -277,53 +277,181 @@ class SearchViewModel: ObservableObject {
     @Published var searchText = ""
     @Published var results: [MovieItem] = []
     @Published var isLoading = false
+    @Published var isLoadingMore = false
     @Published var searchHistory: [String] = []
     @Published var hotKeywords: [String] = []
     @Published var error: Error?
+    @Published var searchMode: SearchMode = .current // 搜索模式
+    
+    // 分页状态
+    @Published var currentPage: Int = 1
+    @Published var hasMorePages: Bool = true
     
     private let apiConfig = ApiConfig.shared
     private let storageManager = StorageManager.shared
+    private let spiderManager = SpiderManager.shared
+    
+    /// 搜索模式
+    enum SearchMode {
+        case current    // 当前站点搜索
+        case quick      // 快速搜索 (多站点并行)
+        case aggregate  // 聚合搜索 (所有站点)
+    }
     
     init() {
         loadSearchHistory()
         loadHotKeywords()
     }
     
-    func search() {
+    /// 执行搜索
+    /// - Parameter refresh: 是否刷新 (从第一页开始)
+    func search(refresh: Bool = true) {
         guard !searchText.isEmpty else { return }
         
         // 保存搜索历史
         saveSearchHistory(searchText)
         
-        isLoading = true
-        results.removeAll()
+        if refresh {
+            isLoading = true
+            results.removeAll()
+            currentPage = 1
+            hasMorePages = true
+        } else {
+            guard hasMorePages, !isLoadingMore else { return }
+            isLoadingMore = true
+        }
         
         Task {
             do {
-                let searchResults = try await performSearch(keyword: searchText)
+                let searchResults: [MovieItem]
+                
+                switch searchMode {
+                case .current:
+                    searchResults = try await searchCurrentSite(keyword: searchText, page: currentPage)
+                case .quick:
+                    searchResults = try await quickSearch(keyword: searchText)
+                case .aggregate:
+                    searchResults = try await aggregateSearch(keyword: searchText)
+                }
+                
                 await MainActor.run {
-                    self.results = searchResults
+                    if refresh {
+                        self.results = searchResults
+                    } else {
+                        self.results.append(contentsOf: searchResults)
+                    }
+                    
+                    // 判断是否有更多页面
+                    self.hasMorePages = searchResults.count >= 20
                     self.isLoading = false
+                    self.isLoadingMore = false
+                    self.error = nil
                 }
             } catch {
                 await MainActor.run {
                     self.error = error
                     self.isLoading = false
+                    self.isLoadingMore = false
                 }
             }
         }
     }
     
-    private func performSearch(keyword: String) async throws -> [MovieItem] {
-        // 在所有可搜索的站点中搜索
+    /// 加载更多搜索结果
+    func loadMore() {
+        guard hasMorePages, !isLoadingMore, searchMode == .current else { return }
+        
+        currentPage += 1
+        search(refresh: false)
+    }
+    
+    /// 在当前站点搜索
+    private func searchCurrentSite(keyword: String, page: Int) async throws -> [MovieItem] {
+        return try await spiderManager.searchContent(keyword: keyword, quick: false, page: page)
+    }
+    
+    /// 快速搜索 (多站点并行)
+    private func quickSearch(keyword: String) async throws -> [MovieItem] {
+        let searchableSites = apiConfig.searchableSites.prefix(5) // 限制并行数量
+        
         var allResults: [MovieItem] = []
         
-        for site in apiConfig.searchableSites {
-            // TODO: 实现从 Spider 搜索的逻辑
-            // 根据站点类型调用不同的搜索接口
+        await withTaskGroup(of: [MovieItem].self) { group in
+            for site in searchableSites {
+                group.addTask {
+                    do {
+                        let spider = try await self.spiderManager.getSpider(for: site)
+                        return try await spider.searchContent(keyword: keyword, quick: true, page: 1)
+                    } catch {
+                        print("Quick search error for \(site.name): \(error)")
+                        return []
+                    }
+                }
+            }
+            
+            for await results in group {
+                allResults.append(contentsOf: results)
+            }
         }
         
-        return allResults
+        // 去重
+        return deduplicateResults(allResults)
+    }
+    
+    /// 聚合搜索 (所有可搜索站点)
+    private func aggregateSearch(keyword: String) async throws -> [MovieItem] {
+        let searchableSites = apiConfig.searchableSites
+        
+        var allResults: [MovieItem] = []
+        
+        // 分批搜索，避免太多并行请求
+        let batchSize = 5
+        for batch in stride(from: 0, to: searchableSites.count, by: batchSize) {
+            let endIndex = min(batch + batchSize, searchableSites.count)
+            let batchSites = Array(searchableSites[batch..<endIndex])
+            
+            await withTaskGroup(of: [MovieItem].self) { group in
+                for site in batchSites {
+                    group.addTask {
+                        do {
+                            let spider = try await self.spiderManager.getSpider(for: site)
+                            return try await spider.searchContent(keyword: keyword, quick: false, page: 1)
+                        } catch {
+                            print("Aggregate search error for \(site.name): \(error)")
+                            return []
+                        }
+                    }
+                }
+                
+                for await results in group {
+                    allResults.append(contentsOf: results)
+                }
+            }
+        }
+        
+        return deduplicateResults(allResults)
+    }
+    
+    /// 去重搜索结果
+    private func deduplicateResults(_ results: [MovieItem]) -> [MovieItem] {
+        var seen = Set<String>()
+        return results.filter { movie in
+            let key = movie.vodName.lowercased()
+            if seen.contains(key) {
+                return false
+            }
+            seen.insert(key)
+            return true
+        }
+    }
+    
+    /// 清除搜索
+    func clear() {
+        searchText = ""
+        results.removeAll()
+        currentPage = 1
+        hasMorePages = true
+        error = nil
     }
     
     func clearHistory() {

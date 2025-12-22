@@ -230,20 +230,26 @@ class DetailViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var isCollected = false
     @Published var error: Error?
+    @Published var playerContent: PlayerContent?
+    @Published var isLoadingPlayer = false
     
     private let apiConfig = ApiConfig.shared
     private let storageManager = StorageManager.shared
+    private let spiderManager = SpiderManager.shared
     
+    /// 加载视频详情
+    /// - Parameter vodId: 视频ID
     func loadDetail(vodId: String) {
-        guard let currentSite = apiConfig.currentSite else { return }
+        guard apiConfig.currentSite != nil else { return }
         
         isLoading = true
+        error = nil
         
         Task {
             do {
-                let detail = try await fetchDetail(siteKey: currentSite.key, vodId: vodId)
+                let details = try await spiderManager.detailContent(ids: [vodId])
                 await MainActor.run {
-                    self.vodInfo = detail
+                    self.vodInfo = details.first
                     self.isLoading = false
                     self.checkCollected(vodId: vodId)
                 }
@@ -256,12 +262,51 @@ class DetailViewModel: ObservableObject {
         }
     }
     
-    private func fetchDetail(siteKey: String, vodId: String) async throws -> VodInfo? {
-        // TODO: 实现从 Spider 获取详情的逻辑
-        // 这里需要根据不同的站点类型调用不同的接口
-        return nil
+    /// 加载视频详情 (使用 MovieItem)
+    /// - Parameter movie: 视频项
+    func loadDetail(movie: MovieItem) {
+        loadDetail(vodId: movie.vodId)
     }
     
+    /// 获取播放地址
+    /// - Parameters:
+    ///   - flag: 播放源标识
+    ///   - episode: 剧集信息
+    func loadPlayerContent(flag: String, episode: VodInfo.VodPlayItem) {
+        isLoadingPlayer = true
+        playerContent = nil
+        
+        Task {
+            do {
+                let content = try await spiderManager.playerContent(flag: flag, id: episode.url)
+                await MainActor.run {
+                    self.playerContent = content
+                    self.isLoadingPlayer = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.error = error
+                    self.isLoadingPlayer = false
+                }
+            }
+        }
+    }
+    
+    /// 获取实际播放地址
+    /// - Returns: 可播放的 URL
+    func getPlayUrl() -> URL? {
+        guard let content = playerContent else { return nil }
+        
+        if content.needParse {
+            // 需要解析，这里应该调用解析接口
+            // 暂时返回原始 URL
+            return URL(string: content.url)
+        }
+        
+        return URL(string: content.url)
+    }
+    
+    /// 切换收藏状态
     func toggleCollect() {
         guard let vodInfo = vodInfo else { return }
         
@@ -271,6 +316,21 @@ class DetailViewModel: ObservableObject {
             storageManager.addCollect(vodInfo: vodInfo)
         }
         isCollected.toggle()
+    }
+    
+    /// 添加到历史记录
+    /// - Parameters:
+    ///   - sourceIndex: 播放源索引
+    ///   - episodeIndex: 剧集索引
+    ///   - progress: 播放进度
+    func addToHistory(sourceIndex: Int, episodeIndex: Int, progress: Double) {
+        guard let vodInfo = vodInfo else { return }
+        storageManager.addHistory(
+            vodInfo: vodInfo,
+            sourceIndex: sourceIndex,
+            episodeIndex: episodeIndex,
+            progress: progress
+        )
     }
     
     private func checkCollected(vodId: String) {

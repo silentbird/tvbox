@@ -2,6 +2,17 @@
 
 > 最后更新: 2025-12-22
 > 基于 Android 版本同步
+>
+> **新增文件:**
+> - `Core/Spider/Spider.swift` - Spider 协议定义
+> - `Core/Spider/SpiderManager.swift` - Spider 管理器
+> - `Core/Spider/JsonSpider.swift` - JSON 类型站点实现
+> - `Core/Spider/JsSpider.swift` - JavaScript 爬虫 (JavaScriptCore)
+> - `Core/Live/LiveParser.swift` - 直播源解析器协议和管理器
+> - `Core/Live/TxtLiveParser.swift` - TXT 格式直播源解析
+> - `Core/Live/M3uLiveParser.swift` - M3U/M3U8 格式解析
+> - `Core/Live/JsonLiveParser.swift` - TVBOX JSON 格式解析
+> - `Core/Live/EpgManager.swift` - EPG 电子节目单管理
 
 ## ✅ 已完成功能
 
@@ -44,22 +55,22 @@
 ### 🔴 高优先级
 
 #### Spider 爬虫替代方案
-- [ ] 研究 iOS 上执行 JavaScript 的方案 (JavaScriptCore)
-- [ ] 实现 JS 爬虫加载器 (JsLoader)
-- [ ] 支持远程 JS 脚本执行
-- [ ] 实现 Spider 基础接口
+- [x] 研究 iOS 上执行 JavaScript 的方案 (JavaScriptCore)
+- [x] 实现 JS 爬虫加载器 (JsSpider)
+- [x] 支持远程 JS 脚本执行
+- [x] 实现 Spider 基础接口 (Spider.swift)
 
 #### JSON 类型站点完整支持
-- [ ] 完善 HomeViewModel 的 API 调用
-- [ ] 实现分类视频列表加载
-- [ ] 实现搜索功能的 API 调用
-- [ ] 实现详情页的 API 调用
+- [x] 完善 HomeViewModel 的 API 调用 (支持分页、筛选)
+- [x] 实现分类视频列表加载 (带分页功能)
+- [x] 实现搜索功能的 API 调用 (支持多站点搜索)
+- [x] 实现详情页的 API 调用 (DetailViewModel)
 
 #### 直播源解析
-- [ ] TXT 格式直播源解析
-- [ ] M3U/M3U8 格式直播源解析
-- [ ] TVBOX JSON 直播格式支持
-- [ ] EPG 电子节目单支持
+- [x] TXT 格式直播源解析 (TxtLiveParser)
+- [x] M3U/M3U8 格式直播源解析 (M3uLiveParser)
+- [x] TVBOX JSON 直播格式支持 (JsonLiveParser)
+- [x] EPG 电子节目单支持 (EpgManager)
 
 ---
 
@@ -226,6 +237,46 @@ let result = context?.evaluateScript("spider.homeContent()")
 ---
 
 ## 📅 更新日志
+
+### 2025-12-22 (直播源解析 & EPG)
+- ✅ 完成直播源解析架构
+  - 新增 `LiveParser.swift` - 解析器协议和管理器
+  - 新增 `TxtLiveParser.swift` - TXT 格式解析 (支持多源、分组密码)
+  - 新增 `M3uLiveParser.swift` - M3U/M3U8 格式解析 (自动合并多源)
+  - 新增 `JsonLiveParser.swift` - TVBOX JSON 格式解析
+- ✅ 完成 EPG 电子节目单功能
+  - 新增 `EpgManager.swift` - EPG 管理器
+  - 支持 XMLTV 格式解析
+  - 支持 JSON 格式解析
+  - 支持简单文本格式解析
+  - 自动缓存 (6小时有效期)
+- ✅ 完善 LiveViewModel
+  - 集成直播源解析器
+  - 支持多直播源合并
+  - 集成 EPG 显示
+- ✅ 完善频道列表 UI
+  - 显示当前节目
+  - 显示播放进度条
+
+### 2025-12-22 (Spider & API 实现)
+- ✅ 完成 Spider 爬虫架构实现
+  - 新增 `Spider.swift` - 爬虫协议定义
+  - 新增 `SpiderManager.swift` - 爬虫管理器
+  - 新增 `JsonSpider.swift` - JSON 类型站点爬虫
+  - 新增 `JsSpider.swift` - JavaScript 爬虫 (JavaScriptCore)
+- ✅ 完善 HomeViewModel
+  - 支持分页加载视频列表
+  - 支持筛选功能
+  - 支持多站点快速搜索
+- ✅ 完善 DetailViewModel
+  - 实现详情页 API 调用
+  - 支持获取播放地址
+  - 支持历史记录
+- ✅ 完善 SearchViewModel
+  - 支持当前站点搜索
+  - 支持快速搜索 (多站点并行)
+  - 支持聚合搜索
+  - 支持搜索分页
 
 ### 2025-12-22
 - 同步 Android 端新增功能到 TODO

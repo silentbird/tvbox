@@ -112,6 +112,25 @@ class StorageManager {
         userDefaults.removeObject(forKey: Keys.vodHistory)
     }
     
+    /// 添加播放历史 (从 VodInfo)
+    func addHistory(vodInfo: VodInfo, sourceIndex: Int, episodeIndex: Int, progress: Double) {
+        guard let currentSite = ApiConfig.shared.currentSite else { return }
+        
+        let item = VodHistoryItem(
+            vodId: vodInfo.vodId,
+            vodName: vodInfo.vodName,
+            vodPic: vodInfo.vodPic,
+            siteKey: currentSite.key,
+            playIndex: sourceIndex,
+            episodeIndex: episodeIndex,
+            progress: progress,
+            duration: 0,
+            updateTime: Date()
+        )
+        
+        addVodHistory(item)
+    }
+    
     private func saveVodHistory(_ history: [VodHistoryItem]) {
         do {
             let data = try JSONEncoder().encode(history)

@@ -86,11 +86,15 @@ struct LiveView: View {
                 
                 LazyVStack(spacing: 1) {
                     ForEach(channels) { channel in
-                        ChannelRow(channel: channel, isSelected: selectedChannel?.id == channel.id)
-                            .onTapGesture {
-                                selectedChannel = channel
-                                showPlayer = true
-                            }
+                        ChannelRow(
+                            channel: channel,
+                            isSelected: selectedChannel?.id == channel.id,
+                            currentProgram: viewModel.getCurrentProgram(for: channel)
+                        )
+                        .onTapGesture {
+                            selectedChannel = channel
+                            showPlayer = true
+                        }
                     }
                 }
             } else {
@@ -109,6 +113,7 @@ struct LiveView: View {
 struct ChannelRow: View {
     let channel: LiveChannelItem
     let isSelected: Bool
+    var currentProgram: EpgProgram?
     
     var body: some View {
         HStack(spacing: 12) {
@@ -118,11 +123,51 @@ struct ChannelRow: View {
                 .foregroundColor(.secondary)
                 .frame(width: 36)
             
-            // 频道名
-            Text(channel.channelName)
-                .font(.body)
-                .foregroundColor(isSelected ? .blue : .primary)
-                .lineLimit(1)
+            // 频道信息
+            VStack(alignment: .leading, spacing: 4) {
+                // 频道名
+                Text(channel.channelName)
+                    .font(.body)
+                    .foregroundColor(isSelected ? .blue : .primary)
+                    .lineLimit(1)
+                
+                // 当前节目 (EPG)
+                if let program = currentProgram {
+                    HStack(spacing: 4) {
+                        // 直播标记
+                        if program.isLive {
+                            Text("直播")
+                                .font(.system(size: 9))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.red)
+                                .cornerRadius(2)
+                        }
+                        
+                        Text(program.title)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                    
+                    // 进度条
+                    if program.isLive {
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Rectangle()
+                                    .fill(Color(.systemGray5))
+                                    .frame(height: 2)
+                                
+                                Rectangle()
+                                    .fill(Color.blue)
+                                    .frame(width: geo.size.width * program.progress, height: 2)
+                            }
+                        }
+                        .frame(height: 2)
+                    }
+                }
+            }
             
             Spacer()
             
@@ -274,11 +319,15 @@ class LiveViewModel: ObservableObject {
     @Published var channelGroups: [LiveChannelGroup] = []
     @Published var isLoading = false
     @Published var error: Error?
+    @Published var currentPrograms: [String: EpgProgram] = [:] // 频道名 -> 当前节目
     
     private let apiConfig = ApiConfig.shared
+    private let parserManager = LiveParserManager.shared
+    private let epgManager = EpgManager.shared
     
     func loadChannels() {
         isLoading = true
+        error = nil
         
         Task {
             do {
@@ -287,6 +336,9 @@ class LiveViewModel: ObservableObject {
                     self.channelGroups = groups
                     self.isLoading = false
                 }
+                
+                // 加载 EPG
+                await loadEpg()
             } catch {
                 await MainActor.run {
                     self.error = error
@@ -298,13 +350,109 @@ class LiveViewModel: ObservableObject {
     
     func refreshChannels() {
         channelGroups.removeAll()
+        currentPrograms.removeAll()
+        epgManager.clearCache()
         loadChannels()
     }
     
+    /// 获取频道当前节目
+    func getCurrentProgram(for channel: LiveChannelItem) -> EpgProgram? {
+        return currentPrograms[channel.channelName] ?? epgManager.getCurrentProgram(for: channel.channelName)
+    }
+    
+    /// 获取频道节目列表
+    func getPrograms(for channel: LiveChannelItem) -> [EpgProgram] {
+        return epgManager.getPrograms(for: channel.channelName)
+    }
+    
     private func fetchChannelGroups() async throws -> [LiveChannelGroup] {
-        // TODO: 从直播配置加载频道列表
-        // 这里需要解析直播源 URL (txt/m3u 格式)
-        return []
+        // 从直播配置加载频道列表
+        let liveConfigs = apiConfig.liveConfigs
+        
+        guard !liveConfigs.isEmpty else {
+            // 如果没有配置，返回空列表
+            return []
+        }
+        
+        var allGroups: [LiveChannelGroup] = []
+        
+        // 遍历所有直播源配置
+        for config in liveConfigs {
+            do {
+                let groups = try await parserManager.loadFromConfig(config)
+                allGroups.append(contentsOf: groups)
+            } catch {
+                print("加载直播源失败: \(config.name ?? "未知"): \(error)")
+                // 继续加载其他源
+            }
+        }
+        
+        // 合并同名分组
+        return mergeGroups(allGroups)
+    }
+    
+    /// 加载 EPG 数据
+    private func loadEpg() async {
+        // 从直播配置获取 EPG URL
+        for config in apiConfig.liveConfigs {
+            if let epgUrl = config.epg, !epgUrl.isEmpty {
+                do {
+                    try await epgManager.loadEpg(from: epgUrl)
+                    
+                    // 更新当前节目
+                    await updateCurrentPrograms()
+                    
+                    break // 只加载第一个有效的 EPG
+                } catch {
+                    print("加载 EPG 失败: \(error)")
+                }
+            }
+        }
+    }
+    
+    /// 更新所有频道的当前节目
+    @MainActor
+    private func updateCurrentPrograms() {
+        var programs: [String: EpgProgram] = [:]
+        
+        for group in channelGroups {
+            for channel in group.channels {
+                if let program = epgManager.getCurrentProgram(for: channel.channelName) {
+                    programs[channel.channelName] = program
+                }
+            }
+        }
+        
+        currentPrograms = programs
+    }
+    
+    /// 合并同名分组
+    private func mergeGroups(_ groups: [LiveChannelGroup]) -> [LiveChannelGroup] {
+        var mergedDict: [String: LiveChannelGroup] = [:]
+        var order: [String] = []
+        
+        for group in groups {
+            if mergedDict[group.groupName] != nil {
+                // 合并频道
+                mergedDict[group.groupName]?.channels.append(contentsOf: group.channels)
+            } else {
+                mergedDict[group.groupName] = group
+                order.append(group.groupName)
+            }
+        }
+        
+        // 重新索引
+        return order.enumerated().compactMap { index, name in
+            guard var group = mergedDict[name] else { return nil }
+            group.groupIndex = index
+            group.channels = group.channels.enumerated().map { channelIndex, channel in
+                var mutableChannel = channel
+                mutableChannel.channelIndex = channelIndex
+                mutableChannel.channelNum = channelIndex + 1
+                return mutableChannel
+            }
+            return group
+        }
     }
 }
 
