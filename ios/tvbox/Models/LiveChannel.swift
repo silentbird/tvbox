@@ -1,7 +1,7 @@
 import Foundation
 
 /// 直播频道组 - 对应 Android 的 LiveChannelGroup
-struct LiveChannelGroup: Codable, Identifiable {
+struct LiveChannelGroup: Decodable, Identifiable {
     var id: String { groupName }
     
     var groupIndex: Int = 0
@@ -32,7 +32,7 @@ struct LiveChannelGroup: Codable, Identifiable {
 }
 
 /// 直播频道项 - 对应 Android 的 LiveChannelItem
-struct LiveChannelItem: Codable, Identifiable {
+struct LiveChannelItem: Decodable, Identifiable {
     var id: String { channelName }
     
     var channelIndex: Int = 0
@@ -71,7 +71,7 @@ struct LiveChannelItem: Codable, Identifiable {
 }
 
 /// 直播配置 - lives 数组中的单个配置
-struct LiveConfig: Codable {
+struct LiveConfig: Decodable {
     let name: String?
     let type: Int?
     let url: String?

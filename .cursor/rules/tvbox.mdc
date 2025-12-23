@@ -1,0 +1,4 @@
+---
+alwaysApply: true
+---
+在查ios项目的bug或新增代码之前，都参照android项目的实现

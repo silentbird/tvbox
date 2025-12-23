@@ -396,12 +396,12 @@ class DetailViewModel: ObservableObject {
 
 #Preview {
     NavigationView {
-        DetailView(movie: MovieItem(from: try! JSONDecoder().decode(
+        DetailView(movie: try! JSONDecoder().decode(
             MovieItem.self,
             from: """
             {"vod_id": "1", "vod_name": "测试电影", "vod_pic": "", "vod_remarks": "更新至10集"}
             """.data(using: .utf8)!
-        )))
+        ))
     }
 }
 

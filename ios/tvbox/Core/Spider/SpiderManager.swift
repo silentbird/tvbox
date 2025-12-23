@@ -17,18 +17,37 @@ class SpiderManager {
     /// - Returns: Spider 实例
     func getSpider(for site: SiteBean) async throws -> Spider {
         lock.lock()
-        defer { lock.unlock() }
         
         // 检查缓存
         if let spider = spiders[site.key] {
+            lock.unlock()
             return spider
         }
         
-        // 根据站点类型创建不同的 Spider
-        let spider = try createSpider(for: site)
-        try await spider.initialize(ext: site.ext)
+        lock.unlock()
         
+        // 根据站点类型创建不同的 Spider
+        var spider = try createSpider(for: site)
+        
+        do {
+            try await spider.initialize(ext: site.ext)
+        } catch let error as SpiderError {
+            // 如果是 JsSpider 且因为 QuickJS 格式失败，尝试使用 QuickJSSpider
+            if case .unsupported(let msg) = error,
+               msg.contains("QuickJS") || msg.contains("字节码") || msg.contains("二进制"),
+               site.type == 3 {
+                print("[SpiderManager] JsSpider 失败，尝试 QuickJSSpider: \(msg)")
+                spider = QuickJSSpider(site: site)
+                try await spider.initialize(ext: site.ext)
+            } else {
+                throw error
+            }
+        }
+        
+        lock.lock()
         spiders[site.key] = spider
+        lock.unlock()
+        
         return spider
     }
     

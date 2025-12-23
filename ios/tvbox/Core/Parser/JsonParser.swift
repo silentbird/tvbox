@@ -67,7 +67,7 @@ class JsonParser {
         }
         
         // 请求解析接口
-        let jsonString = try await httpUtil.string(url: url, headers: headers, timeout: timeout)
+        let jsonString = try await httpUtil.string(url: url, headers: headers)
         
         // 解析响应
         return try parseResponse(jsonString: jsonString, parserName: parser.name)

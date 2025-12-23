@@ -1,7 +1,7 @@
 import Foundation
 
 /// 影视分类 - 对应 Android 的 MovieSort.SortData
-struct MovieCategory: Codable, Identifiable, Hashable {
+struct MovieCategory: Decodable, Identifiable, Hashable {
     var id: String { tid }
     
     let tid: String
@@ -40,7 +40,7 @@ struct MovieCategory: Codable, Identifiable, Hashable {
 }
 
 /// 影视筛选条件
-struct MovieFilter: Codable, Hashable {
+struct MovieFilter: Decodable, Hashable {
     let key: String
     let name: String
     let values: [MovieFilterValue]
@@ -51,13 +51,13 @@ struct MovieFilter: Codable, Hashable {
     }
 }
 
-struct MovieFilterValue: Codable, Hashable {
+struct MovieFilterValue: Decodable, Hashable {
     let n: String // 显示名称
     let v: String // 值
 }
 
 /// 影视项 - 对应 Android 的 Movie.Video
-struct MovieItem: Codable, Identifiable, Hashable {
+struct MovieItem: Decodable, Identifiable, Hashable {
     var id: String { vodId }
     
     let vodId: String
@@ -113,10 +113,30 @@ struct MovieItem: Codable, Identifiable, Hashable {
         vodTag = try container.decodeIfPresent(String.self, forKey: .vodTag)
         typeName = try container.decodeIfPresent(String.self, forKey: .typeName)
     }
+    
+    /// 便捷初始化器 - 用于手动创建 MovieItem（如豆瓣热门）
+    init(vodId: String, vodName: String, vodPic: String? = nil, vodRemarks: String? = nil,
+         vodYear: String? = nil, vodArea: String? = nil, vodActor: String? = nil,
+         vodDirector: String? = nil, vodContent: String? = nil, vodPlayFrom: String? = nil,
+         vodPlayUrl: String? = nil, vodTag: String? = nil, typeName: String? = nil) {
+        self.vodId = vodId
+        self.vodName = vodName
+        self.vodPic = vodPic
+        self.vodRemarks = vodRemarks
+        self.vodYear = vodYear
+        self.vodArea = vodArea
+        self.vodActor = vodActor
+        self.vodDirector = vodDirector
+        self.vodContent = vodContent
+        self.vodPlayFrom = vodPlayFrom
+        self.vodPlayUrl = vodPlayUrl
+        self.vodTag = vodTag
+        self.typeName = typeName
+    }
 }
 
 /// 影视详情 - 对应 Android 的 VodInfo
-struct VodInfo: Codable, Identifiable {
+struct VodInfo: Decodable, Identifiable {
     var id: String { vodId }
     
     let vodId: String
@@ -214,7 +234,7 @@ struct VodInfo: Codable, Identifiable {
 }
 
 /// API 响应结构
-struct MovieListResponse: Codable {
+struct MovieListResponse: Decodable {
     let list: [MovieItem]?
     let total: Int?
     let pagecount: Int?
@@ -226,7 +246,7 @@ struct MovieListResponse: Codable {
     }
 }
 
-struct MovieDetailResponse: Codable {
+struct MovieDetailResponse: Decodable {
     let list: [VodInfo]?
     
     enum CodingKeys: String, CodingKey {
@@ -234,7 +254,7 @@ struct MovieDetailResponse: Codable {
     }
 }
 
-struct MovieCategoryResponse: Codable {
+struct MovieCategoryResponse: Decodable {
     let classData: [MovieCategory]?
     let list: [MovieItem]?
     let filters: [String: [MovieFilter]]?

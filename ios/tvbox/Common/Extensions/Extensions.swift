@@ -1,6 +1,10 @@
 import Foundation
 import SwiftUI
 
+#if canImport(UIKit)
+import UIKit
+#endif
+
 // MARK: - Color Extensions
 extension Color {
     static let tvboxBlue = Color(red: 0.2, green: 0.5, blue: 0.9)
@@ -58,6 +62,143 @@ extension String {
         guard let data = Data(base64Encoded: self) else { return nil }
         return String(data: data, encoding: .utf8)
     }
+    
+    /// IDNA 编码（国际化域名转 Punycode）
+    /// 例如: "王二小放牛娃.top" -> "xn--xyz.top"
+    var idnaEncoded: String? {
+        // 检查是否包含非 ASCII 字符
+        guard self.contains(where: { !$0.isASCII }) else {
+            return self
+        }
+        
+        // 分割域名各部分
+        let labels = self.split(separator: ".").map(String.init)
+        var encodedLabels: [String] = []
+        
+        for label in labels {
+            if label.contains(where: { !$0.isASCII }) {
+                // 对非 ASCII 部分进行 Punycode 编码
+                if let encoded = label.punycodeEncoded {
+                    encodedLabels.append("xn--" + encoded)
+                } else {
+                    return nil
+                }
+            } else {
+                encodedLabels.append(label)
+            }
+        }
+        
+        return encodedLabels.joined(separator: ".")
+    }
+    
+    /// Punycode 编码
+    var punycodeEncoded: String? {
+        let base = 36
+        let tmin = 1
+        let tmax = 26
+        let initialBias = 72
+        let initialN = 128
+        
+        var n = initialN
+        var delta = 0
+        var bias = initialBias
+        var output = ""
+        
+        // 复制所有基本码点
+        for char in self.unicodeScalars {
+            if char.value < 128 {
+                output.append(Character(char))
+            }
+        }
+        
+        var h = output.count
+        let b = h
+        
+        if h > 0 {
+            output.append("-")
+        }
+        
+        let inputLength = self.unicodeScalars.count
+        
+        while h < inputLength {
+            var m = Int.max
+            
+            // 找到下一个最小的非基本码点
+            for char in self.unicodeScalars {
+                let c = Int(char.value)
+                if c >= n && c < m {
+                    m = c
+                }
+            }
+            
+            delta += (m - n) * (h + 1)
+            n = m
+            
+            for char in self.unicodeScalars {
+                let c = Int(char.value)
+                
+                if c < n {
+                    delta += 1
+                }
+                
+                if c == n {
+                    var q = delta
+                    var k = base
+                    
+                    while true {
+                        let t: Int
+                        if k <= bias {
+                            t = tmin
+                        } else if k >= bias + tmax {
+                            t = tmax
+                        } else {
+                            t = k - bias
+                        }
+                        
+                        if q < t {
+                            break
+                        }
+                        
+                        let digit = t + (q - t) % (base - t)
+                        output.append(encodeDigit(digit))
+                        q = (q - t) / (base - t)
+                        k += base
+                    }
+                    
+                    output.append(encodeDigit(q))
+                    bias = adapt(delta: delta, numPoints: h + 1, firstTime: h == b)
+                    delta = 0
+                    h += 1
+                }
+            }
+            
+            delta += 1
+            n += 1
+        }
+        
+        return output
+    }
+    
+    private func encodeDigit(_ d: Int) -> Character {
+        if d < 26 {
+            return Character(UnicodeScalar(d + 97)!) // a-z
+        } else {
+            return Character(UnicodeScalar(d - 26 + 48)!) // 0-9
+        }
+    }
+    
+    private func adapt(delta: Int, numPoints: Int, firstTime: Bool) -> Int {
+        var delta = firstTime ? delta / 700 : delta / 2
+        delta += delta / numPoints
+        
+        var k = 0
+        while delta > 455 {
+            delta /= 35
+            k += 36
+        }
+        
+        return k + 36 * delta / (delta + 38)
+    }
 }
 
 // MARK: - Date Extensions
@@ -91,9 +232,11 @@ extension View {
     }
     
     /// 隐藏键盘
+    #if canImport(UIKit)
     func hideKeyboard() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
+    #endif
 }
 
 // MARK: - URL Extensions
@@ -137,7 +280,7 @@ extension UserDefaults {
     }
     
     /// 存储 Codable 对象
-    func set<T: Codable>(_ object: T, forKey key: String) {
+    func setCodable<T: Codable>(_ object: T, forKey key: String) {
         let data = try? JSONEncoder().encode(object)
         set(data, forKey: key)
     }

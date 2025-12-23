@@ -44,7 +44,7 @@ class JsonLiveParser: LiveParser {
         }
         
         // 尝试解析为包含 group 字段的对象
-        struct GroupWrapper: Codable {
+        struct GroupWrapper: Decodable {
             let group: [LiveChannelGroup]?
             let groups: [LiveChannelGroup]?
         }
@@ -59,10 +59,10 @@ class JsonLiveParser: LiveParser {
     
     /// 解析 lives 格式 (配置文件中的 lives 数组)
     private func parseLivesFormat(_ data: Data) throws -> [LiveChannelGroup] {
-        struct LivesWrapper: Codable {
+        struct LivesWrapper: Decodable {
             let lives: [LiveSource]?
             
-            struct LiveSource: Codable {
+            struct LiveSource: Decodable {
                 let group: String?
                 let channels: [JsonChannel]?
             }
@@ -167,7 +167,7 @@ class JsonLiveParser: LiveParser {
 }
 
 /// JSON 频道结构
-private struct JsonChannel: Codable {
+private struct JsonChannel: Decodable {
     let name: String
     let urls: [String]
     

@@ -147,7 +147,7 @@ class CollectViewModel: ObservableObject {
         
         // 直接更新 UserDefaults
         if let data = try? JSONEncoder().encode(collects) {
-            UserDefaults.standard.set(data, forKey: "vod_collect")
+            UserDefaults.standard.setCodable(data, forKey: "vod_collect")
         }
         
         loadCollects()

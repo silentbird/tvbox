@@ -6,20 +6,26 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXBuildFile section */
-		048E26DA2D9E37D900E35C68 /* Gemfile in Resources */ = {isa = PBXBuildFile; fileRef = 048E26D92D9E37D900E35C68 /* Gemfile */; };
-/* End PBXBuildFile section */
-
 /* Begin PBXFileReference section */
-		048E26D62D9E37A400E35C68 /* Appfile */ = {isa = PBXFileReference; lastKnownFileType = text; path = Appfile; sourceTree = "<group>"; };
-		048E26D72D9E37A400E35C68 /* Fastfile */ = {isa = PBXFileReference; lastKnownFileType = text; path = Fastfile; sourceTree = "<group>"; };
-		048E26D92D9E37D900E35C68 /* Gemfile */ = {isa = PBXFileReference; lastKnownFileType = text; path = Gemfile; sourceTree = "<group>"; };
 		04B74ED32D9DB54A006D111D /* tvbox.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = tvbox.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		04B74ED62D9DB54A006D111E /* Exceptions for "tvbox" folder in "tvbox" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 04B74ED22D9DB54A006D111D /* tvbox */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		04B74ED52D9DB54A006D111D /* tvbox */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				04B74ED62D9DB54A006D111E /* Exceptions for "tvbox" folder in "tvbox" target */,
+			);
 			path = tvbox;
 			sourceTree = "<group>";
 		};
@@ -36,22 +42,11 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		048E26D82D9E37A400E35C68 /* fastlane */ = {
-			isa = PBXGroup;
-			children = (
-				048E26D62D9E37A400E35C68 /* Appfile */,
-				048E26D72D9E37A400E35C68 /* Fastfile */,
-			);
-			path = fastlane;
-			sourceTree = SOURCE_ROOT;
-		};
 		04B74ECA2D9DB54A006D111D = {
 			isa = PBXGroup;
 			children = (
-				048E26D82D9E37A400E35C68 /* fastlane */,
 				04B74ED52D9DB54A006D111D /* tvbox */,
 				04B74ED42D9DB54A006D111D /* Products */,
-				048E26D92D9E37D900E35C68 /* Gemfile */,
 			);
 			sourceTree = "<group>";
 		};
@@ -127,7 +122,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				048E26DA2D9E37D900E35C68 /* Gemfile in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -272,12 +266,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 7PYQPUUYDQ;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = tvbox/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -300,12 +290,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 7PYQPUUYDQ;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = tvbox/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

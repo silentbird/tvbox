@@ -1,7 +1,7 @@
 import Foundation
 
 /// 解析配置 - 对应 Android 的 ParseBean
-struct ParseBean: Codable, Identifiable, Hashable {
+struct ParseBean: Decodable, Identifiable, Hashable {
     var id: String { name }
     
     let name: String

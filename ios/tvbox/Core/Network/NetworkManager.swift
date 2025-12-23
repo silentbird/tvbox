@@ -1,11 +1,27 @@
 import Foundation
 import Combine
 
-enum NetworkError: Error {
+enum NetworkError: Error, LocalizedError {
     case invalidURL
     case invalidResponse
     case decodingError
     case serverError(String)
+    case httpError(statusCode: Int, message: String)
+    
+    var errorDescription: String? {
+        switch self {
+        case .invalidURL:
+            return "无效的URL"
+        case .invalidResponse:
+            return "无效的响应"
+        case .decodingError:
+            return "解码错误"
+        case .serverError(let message):
+            return "服务器错误: \(message)"
+        case .httpError(let statusCode, let message):
+            return "HTTP错误 \(statusCode): \(message)"
+        }
+    }
 }
 
 class NetworkManager {
