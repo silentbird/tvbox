@@ -22,7 +22,7 @@ struct DetailView: View {
                 }
             }
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Color.tvboxSystemGroupedBackground)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -153,7 +153,7 @@ struct DetailView: View {
             }
         }
         .padding()
-        .background(Color(.systemBackground))
+        .background(Color.tvboxSystemBackground)
     }
     
     // MARK: - Play Source Section
@@ -171,7 +171,7 @@ struct DetailView: View {
                                     .foregroundColor(selectedSourceIndex == index ? .white : .primary)
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 8)
-                                    .background(selectedSourceIndex == index ? Color.blue : Color(.systemGray5))
+                                    .background(selectedSourceIndex == index ? Color.blue : Color.tvboxSystemGray5)
                                     .cornerRadius(8)
                             }
                         }
@@ -199,7 +199,7 @@ struct DetailView: View {
                                 .lineLimit(1)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 10)
-                                .background(Color(.systemGray5))
+                                .background(Color.tvboxSystemGray5)
                                 .foregroundColor(.primary)
                                 .cornerRadius(6)
                         }
@@ -209,7 +209,7 @@ struct DetailView: View {
             }
         }
         .padding(.vertical)
-        .background(Color(.systemBackground))
+        .background(Color.tvboxSystemBackground)
     }
     
     // MARK: - Helper Views
@@ -287,9 +287,10 @@ class DetailViewModel: ObservableObject {
             do {
                 // 1. 获取播放内容
                 var content = try await spiderManager.playerContent(flag: flag, id: episode.url)
+                let initialContent = content
                 
                 await MainActor.run {
-                    self.playerContent = content
+                    self.playerContent = initialContent
                 }
                 
                 // 2. 检查是否需要解析
@@ -300,17 +301,19 @@ class DetailViewModel: ObservableObject {
                     
                     // 调用解析接口
                     content = try await parserManager.parse(content: content)
+                    let parsedContent = content
                     
                     await MainActor.run {
-                        self.playerContent = content
+                        self.playerContent = parsedContent
                     }
                 }
                 
                 // 3. 设置最终的播放 URL
+                let finalContent = content
                 await MainActor.run {
-                    if let url = URL(string: content.url) {
+                    if let url = URL(string: finalContent.url) {
                         self.parsedUrl = url
-                        self.parsedHeaders = content.header
+                        self.parsedHeaders = finalContent.header
                         self.parseStatus = ""
                     } else {
                         self.parseStatus = "无效的播放地址"
@@ -394,6 +397,7 @@ class DetailViewModel: ObservableObject {
     }
 }
 
+#if !targetEnvironment(macCatalyst)
 #Preview {
     NavigationView {
         DetailView(movie: try! JSONDecoder().decode(
@@ -404,4 +408,4 @@ class DetailViewModel: ObservableObject {
         ))
     }
 }
-
+#endif

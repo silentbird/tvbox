@@ -110,7 +110,7 @@ struct CollectItemCard: View {
             }
             .padding(8)
         }
-        .background(Color(.systemBackground))
+        .background(Color.tvboxSystemBackground)
         .cornerRadius(10)
         .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
         .contextMenu {
@@ -159,9 +159,10 @@ class CollectViewModel: ObservableObject {
     }
 }
 
+#if !targetEnvironment(macCatalyst)
 #Preview {
     NavigationView {
         CollectView()
     }
 }
-
+#endif

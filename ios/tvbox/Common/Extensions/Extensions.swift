@@ -3,6 +3,8 @@ import SwiftUI
 
 #if canImport(UIKit)
 import UIKit
+#elseif canImport(AppKit)
+import AppKit
 #endif
 
 // MARK: - Color Extensions
@@ -11,6 +13,43 @@ extension Color {
     static let tvboxPurple = Color(red: 0.6, green: 0.3, blue: 0.8)
     static let tvboxGreen = Color(red: 0.3, green: 0.7, blue: 0.5)
     static let tvboxOrange = Color(red: 0.9, green: 0.5, blue: 0.2)
+    static var tvboxSystemBackground: Color {
+        #if canImport(UIKit)
+        Color(uiColor: UIColor.systemBackground)
+        #elseif canImport(AppKit)
+        Color(nsColor: NSColor.windowBackgroundColor)
+        #else
+        Color.white
+        #endif
+    }
+
+    static var tvboxSystemGroupedBackground: Color {
+        #if canImport(UIKit)
+        Color(uiColor: UIColor.systemGroupedBackground)
+        #elseif canImport(AppKit)
+        Color(nsColor: NSColor.windowBackgroundColor)
+        #else
+        Color(red: 0.95, green: 0.95, blue: 0.97)
+        #endif
+    }
+
+    static var tvboxSystemGray5: Color {
+        #if canImport(UIKit)
+        Color(uiColor: UIColor.systemGray5)
+        #else
+        Color(red: 0.82, green: 0.82, blue: 0.84)
+        #endif
+    }
+
+    static var tvboxSystemGray6: Color {
+        #if canImport(UIKit)
+        Color(uiColor: UIColor.systemGray6)
+        #elseif canImport(AppKit)
+        Color(nsColor: NSColor.controlBackgroundColor)
+        #else
+        Color(red: 0.94, green: 0.94, blue: 0.96)
+        #endif
+    }
     
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
@@ -293,4 +332,3 @@ extension Notification.Name {
     static let playbackDidStart = Notification.Name("playbackDidStart")
     static let playbackDidEnd = Notification.Name("playbackDidEnd")
 }
-

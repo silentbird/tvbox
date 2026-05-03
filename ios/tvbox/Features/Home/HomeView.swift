@@ -32,7 +32,7 @@ struct HomeView: View {
                 viewModel.loadCategories()
             }
         }
-        .onChange(of: apiConfig.currentSite?.key) { _ in
+        .onChange(of: apiConfig.currentSite?.key) { _, _ in
             viewModel.loadCategories()
         }
     }
@@ -75,7 +75,7 @@ struct HomeView: View {
                             .foregroundColor(apiConfig.currentSite?.key == site.key ? .white : .primary)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
-                            .background(apiConfig.currentSite?.key == site.key ? Color.blue : Color(.systemGray5))
+                            .background(apiConfig.currentSite?.key == site.key ? Color.blue : Color.tvboxSystemGray5)
                             .cornerRadius(18)
                     }
                 }
@@ -107,7 +107,7 @@ struct HomeView: View {
                                     .lineLimit(1)
                             }
                             .frame(width: 70, height: 70)
-                            .background(Color(.systemGray6))
+                            .background(Color.tvboxSystemGray6)
                             .cornerRadius(12)
                         }
                     }
@@ -216,7 +216,7 @@ struct MovieItemCard: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 8)
         }
-        .background(Color(.systemBackground))
+        .background(Color.tvboxSystemBackground)
         .cornerRadius(10)
         .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
     }
@@ -252,11 +252,13 @@ struct CategoryListView: View {
         }
         .navigationTitle(category.name)
         .onAppear {
-            viewModel.loadVideos(for: category)
+            viewModel.loadVideos(for: category, refresh: true)
         }
     }
 }
 
+#if !targetEnvironment(macCatalyst)
 #Preview {
     HomeView()
 }
+#endif

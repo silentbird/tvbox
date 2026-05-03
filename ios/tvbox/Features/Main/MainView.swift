@@ -339,7 +339,7 @@ struct HomeContentView: View {
             print("[HomeContentView] onAppear 被调用")
             viewModel.loadData()
         }
-        .onChange(of: apiConfig.currentSite?.key) { newValue in
+        .onChange(of: apiConfig.currentSite?.key) { _, newValue in
             print("[HomeContentView] onChange currentSite: \(newValue ?? "nil")")
             viewModel.loadData()
         }
@@ -406,7 +406,7 @@ struct HomeContentView: View {
                                 .foregroundColor(.primary)
                         }
                         .frame(width: 70, height: 70)
-                        .background(Color(.systemGray6))
+                        .background(Color.tvboxSystemGray6)
                         .cornerRadius(12)
                     }
                 }
@@ -541,7 +541,7 @@ struct DoubanMovieCard: View {
                 .padding(.horizontal, 6)
                 .padding(.vertical, 6)
         }
-        .background(Color(.systemBackground))
+        .background(Color.tvboxSystemBackground)
         .cornerRadius(10)
         .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
     }
@@ -580,7 +580,7 @@ struct MovieCard: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 8)
         }
-        .background(Color(.systemBackground))
+        .background(Color.tvboxSystemBackground)
         .cornerRadius(10)
         .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
     }
@@ -1043,6 +1043,8 @@ struct MineView: View {
     }
 }
 
+#if !targetEnvironment(macCatalyst)
 #Preview {
     MainView()
 }
+#endif

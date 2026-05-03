@@ -26,7 +26,7 @@ struct SearchView: View {
                 resultsList
             }
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Color.tvboxSystemGroupedBackground)
         .navigationTitle("搜索")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -54,7 +54,7 @@ struct SearchView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .background(Color(.systemGray6))
+            .background(Color.tvboxSystemGray6)
             .cornerRadius(10)
             
             if isSearchFocused {
@@ -66,7 +66,7 @@ struct SearchView: View {
             }
         }
         .padding()
-        .background(Color(.systemBackground))
+        .background(Color.tvboxSystemBackground)
     }
     
     // MARK: - History Section
@@ -100,14 +100,14 @@ struct SearchView: View {
                                         .foregroundColor(.primary)
                                         .padding(.horizontal, 12)
                                         .padding(.vertical, 8)
-                                        .background(Color(.systemGray5))
+                                        .background(Color.tvboxSystemGray5)
                                         .cornerRadius(16)
                                 }
                             }
                         }
                     }
                     .padding()
-                    .background(Color(.systemBackground))
+                    .background(Color.tvboxSystemBackground)
                     .cornerRadius(12)
                 }
                 
@@ -128,14 +128,14 @@ struct SearchView: View {
                                         .foregroundColor(.primary)
                                         .padding(.horizontal, 12)
                                         .padding(.vertical, 8)
-                                        .background(Color(.systemGray5))
+                                        .background(Color.tvboxSystemGray5)
                                         .cornerRadius(16)
                                 }
                             }
                         }
                     }
                     .padding()
-                    .background(Color(.systemBackground))
+                    .background(Color.tvboxSystemBackground)
                     .cornerRadius(12)
                 }
             }
@@ -224,7 +224,7 @@ struct SearchResultRow: View {
                 .foregroundColor(.secondary)
         }
         .padding()
-        .background(Color(.systemBackground))
+        .background(Color.tvboxSystemBackground)
         .cornerRadius(12)
     }
 }
@@ -479,9 +479,10 @@ class SearchViewModel: ObservableObject {
     }
 }
 
+#if !targetEnvironment(macCatalyst)
 #Preview {
     NavigationView {
         SearchView()
     }
 }
-
+#endif

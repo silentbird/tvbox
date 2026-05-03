@@ -138,7 +138,7 @@ struct HistoryRow: View {
                     GeometryReader { geometry in
                         ZStack(alignment: .leading) {
                             Rectangle()
-                                .fill(Color(.systemGray5))
+                                .fill(Color.tvboxSystemGray5)
                                 .frame(height: 3)
                             
                             Rectangle()
@@ -189,9 +189,10 @@ class HistoryViewModel: ObservableObject {
     }
 }
 
+#if !targetEnvironment(macCatalyst)
 #Preview {
     NavigationView {
         HistoryView()
     }
 }
-
+#endif

@@ -21,7 +21,7 @@ struct LiveView: View {
                     .frame(width: geometry.size.width * 0.75)
             }
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Color.tvboxSystemGroupedBackground)
         .navigationTitle("直播")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -43,7 +43,7 @@ struct LiveView: View {
             if viewModel.isLoading {
                 ProgressView("加载中...")
                     .padding()
-                    .background(Color(.systemBackground))
+                    .background(Color.tvboxSystemBackground)
                     .cornerRadius(12)
                     .shadow(radius: 10)
             }
@@ -75,7 +75,7 @@ struct LiveView: View {
                 }
             }
         }
-        .background(Color(.systemBackground))
+        .background(Color.tvboxSystemBackground)
     }
     
     // MARK: - Channel List
@@ -105,7 +105,7 @@ struct LiveView: View {
                 )
             }
         }
-        .background(Color(.systemBackground))
+        .background(Color.tvboxSystemBackground)
     }
 }
 
@@ -156,7 +156,7 @@ struct ChannelRow: View {
                         GeometryReader { geo in
                             ZStack(alignment: .leading) {
                                 Rectangle()
-                                    .fill(Color(.systemGray5))
+                                    .fill(Color.tvboxSystemGray5)
                                     .frame(height: 2)
                                 
                                 Rectangle()
@@ -178,7 +178,7 @@ struct ChannelRow: View {
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color(.systemGray5))
+                    .background(Color.tvboxSystemGray5)
                     .cornerRadius(4)
             }
             
@@ -188,7 +188,7 @@ struct ChannelRow: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(isSelected ? Color.blue.opacity(0.1) : Color(.systemBackground))
+        .background(isSelected ? Color.blue.opacity(0.1) : Color.tvboxSystemBackground)
     }
 }
 
@@ -498,9 +498,10 @@ class LivePlayerViewModel: ObservableObject {
     }
 }
 
+#if !targetEnvironment(macCatalyst)
 #Preview {
     NavigationView {
         LiveView()
     }
 }
-
+#endif

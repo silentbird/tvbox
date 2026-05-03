@@ -16,6 +16,8 @@ struct tvboxApp: App {
     }
 }
 
+#if !targetEnvironment(macCatalyst)
 #Preview {
     MainView()
 }
+#endif

@@ -57,8 +57,10 @@ class SnifferWebView: NSObject {
     private func setupWebView() {
         // 创建配置
         let configuration = WKWebViewConfiguration()
+        #if !targetEnvironment(macCatalyst)
         configuration.allowsInlineMediaPlayback = true
         configuration.mediaTypesRequiringUserActionForPlayback = []
+        #endif
         
         // 设置 URL Scheme Handler 来拦截请求
         let schemeHandler = VideoSchemeHandler(delegate: self)
@@ -389,4 +391,3 @@ struct SniffedVideo {
         )
     }
 }
-

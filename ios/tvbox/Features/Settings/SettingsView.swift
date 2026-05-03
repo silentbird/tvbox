@@ -267,7 +267,7 @@ struct ApiInputView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(Color(.systemGray6))
+                    .background(Color.tvboxSystemGray6)
                     .cornerRadius(10)
                 }
                 .padding(.horizontal)
@@ -546,6 +546,8 @@ class SettingsViewModel: ObservableObject {
     }
 }
 
+#if !targetEnvironment(macCatalyst)
 #Preview {
     SettingsView()
 }
+#endif
