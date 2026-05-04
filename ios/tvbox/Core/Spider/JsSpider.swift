@@ -286,29 +286,10 @@ class JsSpider: Spider {
     }
     
     private func loadScript(_ context: JSContext, from urlString: String, ext: String?) async throws {
-        // 处理 URL，提取 md5 校验码（参照 Android 的处理方式）
-        var scriptUrl = urlString
-        var md5Hash = ""
-        
-        // 处理 ;md5; 格式的 URL
-        if scriptUrl.contains(";md5;") {
-            let parts = scriptUrl.components(separatedBy: ";md5;")
-            scriptUrl = parts[0]
-            if parts.count > 1 {
-                md5Hash = parts[1].trimmingCharacters(in: .whitespaces)
-            }
-        }
-        
-        // 提取类名 (如果有)
-        var className = "Spider"
-        if scriptUrl.contains(".js#") || scriptUrl.contains(".js;") {
-            let separator = scriptUrl.contains(".js#") ? ".js#" : ".js;"
-            let parts = scriptUrl.components(separatedBy: separator)
-            if parts.count >= 2 {
-                scriptUrl = parts[0] + ".js"
-                className = parts[1]
-            }
-        }
+        let scriptReference = try await resolveScriptReference(urlString)
+        let scriptUrl = scriptReference.url
+        let md5Hash = scriptReference.md5
+        let className = scriptReference.className
         
         // 下载脚本
         guard let url = URL(string: scriptUrl) else {
@@ -362,6 +343,77 @@ class JsSpider: Spider {
         if spiderCheck?.toString() == "undefined" {
             throw SpiderError.scriptError("无法创建 spider 实例")
         }
+    }
+    
+    private struct ScriptReference {
+        let url: String
+        let md5: String
+        let className: String
+    }
+    
+    private func resolveScriptReference(_ rawUrl: String) async throws -> ScriptReference {
+        var scriptUrl = rawUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        var md5Hash = ""
+        
+        if scriptUrl.contains(";md5;") {
+            let parts = scriptUrl.components(separatedBy: ";md5;")
+            scriptUrl = parts[0]
+            if parts.count > 1 {
+                md5Hash = extractMD5(from: parts[1])
+            }
+        }
+        
+        var className = "Spider"
+        let classSeparators = [".js.md5#", ".js.md5;", ".js#", ".js;"]
+        for separator in classSeparators {
+            if let range = scriptUrl.range(of: separator, options: [.caseInsensitive]) {
+                let suffixStart = range.upperBound
+                let classPart = String(scriptUrl[suffixStart...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !classPart.isEmpty {
+                    className = classPart
+                }
+                scriptUrl = String(scriptUrl[..<range.lowerBound]) + (separator.hasPrefix(".js.md5") ? ".js.md5" : ".js")
+                break
+            }
+        }
+        
+        if scriptUrl.lowercased().hasSuffix(".js.md5") {
+            let md5Url = scriptUrl
+            if md5Hash.isEmpty {
+                md5Hash = await fetchMD5(from: md5Url) ?? ""
+            }
+            scriptUrl = String(scriptUrl.dropLast(4))
+            print("[JsSpider] 检测到 .js.md5 校验地址，真实脚本 URL: \(scriptUrl)")
+        }
+        
+        return ScriptReference(url: scriptUrl, md5: md5Hash, className: className)
+    }
+    
+    private func fetchMD5(from urlString: String) async -> String? {
+        guard let url = URL(string: urlString) else {
+            return nil
+        }
+        
+        do {
+            let md5Text = try await httpUtil.string(url: url)
+            let md5 = extractMD5(from: md5Text)
+            return md5.isEmpty ? nil : md5
+        } catch {
+            print("[JsSpider] 获取 MD5 校验失败，继续加载真实 JS: \(error.localizedDescription)")
+            return nil
+        }
+    }
+    
+    private func extractMD5(from text: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: "[a-fA-F0-9]{32}") else {
+            return ""
+        }
+        let range = NSRange(text.startIndex..., in: text)
+        guard let match = regex.firstMatch(in: text, range: range),
+              let md5Range = Range(match.range, in: text) else {
+            return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return String(text[md5Range])
     }
     
     /// 加载脚本内容，支持缓存（参照 Android 的 JarLoader 处理方式）
@@ -678,4 +730,3 @@ class JsSpider: Spider {
         )
     }
 }
-

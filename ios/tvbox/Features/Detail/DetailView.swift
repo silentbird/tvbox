@@ -23,9 +23,9 @@ struct DetailView: View {
             }
         }
         .background(Color.tvboxSystemGroupedBackground)
-        .navigationBarTitleDisplayMode(.inline)
+        .tvboxInlineNavigationBarTitle()
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .tvboxNavigationBarTrailing) {
                 Button(action: { viewModel.toggleCollect() }) {
                     Image(systemName: viewModel.isCollected ? "heart.fill" : "heart")
                         .foregroundColor(viewModel.isCollected ? .red : .primary)
@@ -40,7 +40,7 @@ struct DetailView: View {
                     .background(Color.black.opacity(0.2))
             }
         }
-        .fullScreenCover(isPresented: $showPlayer) {
+        .tvboxFullScreenCover(isPresented: $showPlayer) {
             if let episode = selectedEpisode, let vodInfo = viewModel.vodInfo {
                 PlayerView(
                     vodInfo: vodInfo,

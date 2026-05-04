@@ -126,21 +126,9 @@ class QuickJSSpider: Spider {
             throw SpiderError.scriptError("未找到爬虫脚本配置")
         }
         
-        // 提取类名
-        var className = "Spider"
-        if scriptUrl.contains(".js#") || scriptUrl.contains(".js;") {
-            let separator = scriptUrl.contains(".js#") ? ".js#" : ".js;"
-            let parts = scriptUrl.components(separatedBy: separator)
-            if parts.count >= 2 {
-                scriptUrl = parts[0] + ".js"
-                className = parts[1]
-            }
-        }
-        
-        // 处理 ;md5; 格式
-        if scriptUrl.contains(";md5;") {
-            scriptUrl = scriptUrl.components(separatedBy: ";md5;")[0]
-        }
+        let reference = await resolveScriptReference(scriptUrl)
+        scriptUrl = reference.url
+        let className = reference.className
         
         // 下载脚本
         guard let url = URL(string: scriptUrl) else {
@@ -244,6 +232,70 @@ class QuickJSSpider: Spider {
         let _ = try await evaluateJS(fullScript)
         let initResult = try await evaluateJS(initScript)
         print("[QuickJSSpider] 初始化结果: \(initResult)")
+    }
+    
+    private func resolveScriptReference(_ rawUrl: String) async -> (url: String, md5: String, className: String) {
+        var scriptUrl = rawUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        var md5Hash = ""
+        
+        if scriptUrl.contains(";md5;") {
+            let parts = scriptUrl.components(separatedBy: ";md5;")
+            scriptUrl = parts[0]
+            if parts.count > 1 {
+                md5Hash = extractMD5(from: parts[1])
+            }
+        }
+        
+        var className = "Spider"
+        let classSeparators = [".js.md5#", ".js.md5;", ".js#", ".js;"]
+        for separator in classSeparators {
+            if let range = scriptUrl.range(of: separator, options: [.caseInsensitive]) {
+                let classPart = String(scriptUrl[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !classPart.isEmpty {
+                    className = classPart
+                }
+                scriptUrl = String(scriptUrl[..<range.lowerBound]) + (separator.hasPrefix(".js.md5") ? ".js.md5" : ".js")
+                break
+            }
+        }
+        
+        if scriptUrl.lowercased().hasSuffix(".js.md5") {
+            let md5Url = scriptUrl
+            if md5Hash.isEmpty {
+                md5Hash = await fetchMD5(from: md5Url) ?? ""
+            }
+            scriptUrl = String(scriptUrl.dropLast(4))
+            print("[QuickJSSpider] 检测到 .js.md5 校验地址，真实脚本 URL: \(scriptUrl)")
+        }
+        
+        return (scriptUrl, md5Hash, className)
+    }
+    
+    private func fetchMD5(from urlString: String) async -> String? {
+        guard let url = URL(string: urlString) else {
+            return nil
+        }
+        
+        do {
+            let md5Text = try await httpUtil.string(url: url)
+            let md5 = extractMD5(from: md5Text)
+            return md5.isEmpty ? nil : md5
+        } catch {
+            print("[QuickJSSpider] 获取 MD5 校验失败，继续加载真实 JS: \(error.localizedDescription)")
+            return nil
+        }
+    }
+    
+    private func extractMD5(from text: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: "[a-fA-F0-9]{32}") else {
+            return ""
+        }
+        let range = NSRange(text.startIndex..., in: text)
+        guard let match = regex.firstMatch(in: text, range: range),
+              let md5Range = Range(match.range, in: text) else {
+            return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return String(text[md5Range])
     }
     
     /// 从 ZIP/JAR 文件中提取 JavaScript 源码
@@ -733,4 +785,3 @@ class QuickJSMessageHandler: NSObject, WKScriptMessageHandler {
         }
     }
 }
-

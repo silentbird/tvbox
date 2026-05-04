@@ -57,7 +57,7 @@ class SnifferWebView: NSObject {
     private func setupWebView() {
         // 创建配置
         let configuration = WKWebViewConfiguration()
-        #if !targetEnvironment(macCatalyst)
+        #if os(iOS) && !targetEnvironment(macCatalyst)
         configuration.allowsInlineMediaPlayback = true
         configuration.mediaTypesRequiringUserActionForPlayback = []
         #endif

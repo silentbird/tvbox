@@ -18,14 +18,14 @@ struct HomeView: View {
             }
             .navigationTitle(apiConfig.currentSite?.name ?? "首页")
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .tvboxNavigationBarTrailing) {
                     NavigationLink(destination: SearchView()) {
                         Image(systemName: "magnifyingglass")
                     }
                 }
             }
         }
-        .navigationViewStyle(.stack)
+        .tvboxStackNavigationViewStyle()
         .toast(message: viewModel.toastMessage, isShowing: $viewModel.showToast)
         .onAppear {
             if apiConfig.configLoaded {

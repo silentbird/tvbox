@@ -2,6 +2,8 @@ import SwiftUI
 
 #if canImport(UIKit)
 import UIKit
+#elseif canImport(AppKit)
+import AppKit
 #endif
 
 // 用于调试视图重绘次数
@@ -39,6 +41,7 @@ struct MainView: View {
                     print("[MainView] 配置加载完成")
                 }
             }
+            .tvboxConfigSheetSize()
         }
         .task {
             print("[MainView] .task 开始执行")
@@ -55,45 +58,141 @@ struct MainView: View {
     
     // MARK: - Main Tab View
     private var mainTabView: some View {
-        TabView(selection: $selectedTab) {
-            NavigationView {
-                HomeContentView()
-            }
-            .navigationViewStyle(.stack)
-            .tabItem {
-                Label("首页", systemImage: "house.fill")
-            }
-            .tag(0)
+        ZStack(alignment: .bottom) {
+            selectedTabContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.tvboxSystemGroupedBackground.ignoresSafeArea())
+                .safeAreaInset(edge: .bottom) {
+                    Color.clear.frame(height: 86)
+                }
             
-            NavigationView {
-                LiveView()
-            }
-            .navigationViewStyle(.stack)
-            .tabItem {
-                Label("直播", systemImage: "play.tv.fill")
-            }
-            .tag(1)
-            
-            NavigationView {
-                SearchView()
-            }
-            .navigationViewStyle(.stack)
-            .tabItem {
-                Label("搜索", systemImage: "magnifyingglass")
-            }
-            .tag(2)
-            
-            NavigationView {
-                MineView()
-            }
-            .navigationViewStyle(.stack)
-            .tabItem {
-                Label("我的", systemImage: "person.fill")
-            }
-            .tag(3)
+            FloatingTabBar(selectedTab: $selectedTab)
+                .padding(.horizontal, 18)
+                .padding(.bottom, 12)
         }
+        .ignoresSafeArea(.keyboard, edges: .bottom)
     }
     
+    @ViewBuilder
+    private var selectedTabContent: some View {
+        switch selectedTab {
+        case 0:
+            NavigationStack {
+                HomeContentView()
+            }
+        case 1:
+            NavigationStack {
+                LiveView()
+            }
+        case 2:
+            NavigationStack {
+                SearchView()
+            }
+        default:
+            NavigationStack {
+                MineView()
+            }
+        }
+    }
+}
+
+// MARK: - Floating Tab Bar
+private struct FloatingTabBar: View {
+    @Binding var selectedTab: Int
+    
+    private let tabs: [FloatingTabItem] = [
+        FloatingTabItem(title: "首页", systemImage: "house.fill"),
+        FloatingTabItem(title: "直播", systemImage: "play.tv.fill"),
+        FloatingTabItem(title: "搜索", systemImage: "magnifyingglass"),
+        FloatingTabItem(title: "我的", systemImage: "person.fill")
+    ]
+    
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(tabs.indices, id: \.self) { index in
+                Button {
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
+                        selectedTab = index
+                    }
+                } label: {
+                    FloatingTabButton(
+                        item: tabs[index],
+                        isSelected: selectedTab == index
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(6)
+        .frame(maxWidth: 430)
+        .background {
+            floatingGlassBackground
+        }
+        .overlay {
+            Capsule()
+                .strokeBorder(Color.white.opacity(0.22), lineWidth: 1)
+        }
+        .shadow(color: Color.black.opacity(0.20), radius: 22, x: 0, y: 12)
+        .accessibilityElement(children: .contain)
+    }
+    
+    @ViewBuilder
+    private var floatingGlassBackground: some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            Capsule()
+                .fill(Color.white.opacity(0.10))
+                .glassEffect(.regular.tint(Color.white.opacity(0.12)).interactive(), in: Capsule())
+        } else {
+            Capsule()
+                .fill(.ultraThinMaterial)
+                .background {
+                    Capsule()
+                        .fill(Color.white.opacity(0.12))
+                }
+        }
+    }
+}
+
+private struct FloatingTabButton: View {
+    let item: FloatingTabItem
+    let isSelected: Bool
+    
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: item.systemImage)
+                .font(.system(size: 15, weight: .semibold))
+            
+            Text(item.title)
+                .font(.system(size: 14, weight: .semibold))
+                .lineLimit(1)
+        }
+        .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+        .frame(maxWidth: .infinity)
+        .frame(height: 38)
+        .padding(.horizontal, 8)
+        .background {
+            if isSelected {
+                Capsule()
+                    .fill(Color.white.opacity(0.20))
+                    .overlay {
+                        Capsule()
+                            .strokeBorder(Color.white.opacity(0.26), lineWidth: 1)
+                    }
+            }
+        }
+        .contentShape(Capsule())
+        .accessibilityLabel(item.title)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+    
+}
+
+private struct FloatingTabItem {
+    let title: String
+    let systemImage: String
+}
+
+extension MainView {
     // MARK: - Welcome View
     private var welcomeView: some View {
         VStack(spacing: 30) {
@@ -144,92 +243,115 @@ struct ConfigSetupView: View {
     let onComplete: () -> Void
     
     var body: some View {
+        #if os(iOS) && !targetEnvironment(macCatalyst)
         NavigationView {
-            VStack(spacing: 24) {
-                // 说明
-                VStack(spacing: 8) {
-                    Image(systemName: "link.circle.fill")
-                        .font(.system(size: 60))
-                        .foregroundColor(.blue)
-                    
-                    Text("配置数据源")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                    
-                    Text("请输入配置地址以开始使用")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.top, 20)
-                
-                // 输入框
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("配置地址")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    
-                    TextField("http://example.com/config.json", text: $apiUrl)
-                        .textFieldStyle(.roundedBorder)
-                        .autocapitalization(.none)
-                        .autocorrectionDisabled()
-                }
-                .padding(.horizontal)
-                
-                // 错误提示
-                if let error = error {
-                    Text(error)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                        .padding(.horizontal)
-                }
-                
-                // 示例配置
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("示例格式:")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    Text("http://example.com/config.json")
-                        .font(.caption)
-                        .foregroundColor(.blue)
-                        .onTapGesture {
-                            // 可以添加复制功能
-                        }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-                
-                Spacer()
-                
-                // 确认按钮
-                Button(action: confirmConfig) {
-                    HStack {
-                        if isLoading {
-                            ProgressView()
-                                .tint(.white)
-                        } else {
-                            Text("确认")
-                        }
-                    }
-                    .fontWeight(.semibold)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(apiUrl.isEmpty ? Color.gray : Color.blue)
-                    .foregroundColor(.white)
-                    .cornerRadius(12)
-                }
-                .disabled(apiUrl.isEmpty || isLoading)
-                .padding()
-            }
+            configContent
             .navigationTitle("初始配置")
-            .navigationBarTitleDisplayMode(.inline)
+            .tvboxInlineNavigationBarTitle()
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .tvboxNavigationBarLeading) {
                     Button("取消") {
                         dismiss()
                     }
                 }
             }
+        }
+        #else
+        VStack(spacing: 0) {
+            HStack {
+                Text("初始配置")
+                    .font(.headline)
+                Spacer()
+                Button("取消") {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 22)
+            .padding(.bottom, 8)
+
+            configContent
+        }
+        #endif
+    }
+
+    private var configContent: some View {
+        VStack(spacing: 24) {
+            // 说明
+            VStack(spacing: 8) {
+                Image(systemName: "link.circle.fill")
+                    .font(.system(size: 60))
+                    .foregroundColor(.blue)
+                
+                Text("配置数据源")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                
+                Text("请输入配置地址以开始使用")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.top, 20)
+            
+            // 输入框
+            VStack(alignment: .leading, spacing: 8) {
+                Text("配置地址")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                
+                TextField("http://example.com/config.json", text: $apiUrl)
+                    .textFieldStyle(.roundedBorder)
+                    .tvboxUrlTextInputStyle()
+            }
+            .padding(.horizontal)
+            
+            // 错误提示
+            if let error = error {
+                Text(error)
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .padding(.horizontal)
+            }
+            
+            // 示例配置
+            VStack(alignment: .leading, spacing: 8) {
+                Text("示例格式:")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                Text("http://example.com/config.json")
+                    .font(.caption)
+                    .foregroundColor(.blue)
+                    .onTapGesture {
+                        // 可以添加复制功能
+                    }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal)
+            
+            Spacer(minLength: 16)
+            
+            // 确认按钮
+            Button(action: confirmConfig) {
+                HStack {
+                    if isLoading {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Text("确认")
+                    }
+                }
+                .fontWeight(.semibold)
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(apiUrl.isEmpty ? Color.gray : Color.blue)
+                .foregroundColor(.white)
+                .cornerRadius(12)
+            }
+            .keyboardShortcut(.defaultAction)
+            .disabled(apiUrl.isEmpty || isLoading)
+            .padding()
         }
     }
     
@@ -307,8 +429,10 @@ struct HomeContentView: View {
                         }
                     }
                 }
-                .padding(.vertical)
+                .padding(.top, 82)
+                .padding(.bottom, 8)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             
             // 加载状态指示器
             if viewModel.isLoading && viewModel.categories.isEmpty && viewModel.recommendMovies.isEmpty && viewModel.doubanCategories.isEmpty {
@@ -321,17 +445,12 @@ struct HomeContentView: View {
                 }
             }
         }
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                siteSelector
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                NavigationLink(destination: SearchView()) {
-                    Image(systemName: "magnifyingglass")
-                }
-            }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.tvboxSystemGroupedBackground.ignoresSafeArea())
+        .overlay(alignment: .top) {
+            homeTopBar
         }
+        .tvboxHiddenNavigationBar()
         .refreshable {
             await viewModel.refresh()
         }
@@ -342,6 +461,58 @@ struct HomeContentView: View {
         .onChange(of: apiConfig.currentSite?.key) { _, newValue in
             print("[HomeContentView] onChange currentSite: \(newValue ?? "nil")")
             viewModel.loadData()
+        }
+    }
+
+    private var homeTopBar: some View {
+        HStack(spacing: 12) {
+            siteSelector
+
+            Spacer(minLength: 12)
+
+            NavigationLink(destination: SearchView()) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.primary)
+                    .frame(width: 38, height: 38)
+                    .background {
+                        Circle()
+                            .fill(Color.white.opacity(0.18))
+                    }
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("搜索")
+        }
+        .padding(.leading, 18)
+        .padding(.trailing, 8)
+        .padding(.vertical, 8)
+        .frame(maxWidth: 620)
+        .background {
+            topGlassBackground
+        }
+        .overlay {
+            Capsule()
+                .strokeBorder(Color.white.opacity(0.22), lineWidth: 1)
+        }
+        .shadow(color: Color.black.opacity(0.14), radius: 18, x: 0, y: 8)
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+    }
+
+    @ViewBuilder
+    private var topGlassBackground: some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            Capsule()
+                .fill(Color.white.opacity(0.10))
+                .glassEffect(.regular.tint(Color.white.opacity(0.12)).interactive(), in: Capsule())
+        } else {
+            Capsule()
+                .fill(.ultraThinMaterial)
+                .background {
+                    Capsule()
+                        .fill(Color.white.opacity(0.12))
+                }
         }
     }
     
@@ -587,20 +758,32 @@ struct MovieCard: View {
 }
 
 // MARK: - Cached Async Image (支持自定义请求头)
+#if canImport(UIKit)
+private typealias TVBoxPlatformImage = UIImage
+#elseif canImport(AppKit)
+private typealias TVBoxPlatformImage = NSImage
+#endif
+
 struct CachedAsyncImage: View {
     let urlString: String?
-    @State private var image: UIImage?
+    @State private var image: TVBoxPlatformImage?
     @State private var isLoading = false
     
     // 内存缓存
-    private static var imageCache = NSCache<NSString, UIImage>()
+    private static var imageCache = NSCache<NSString, TVBoxPlatformImage>()
     
     var body: some View {
         Group {
             if let image = image {
+                #if canImport(UIKit)
                 Image(uiImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
+                #elseif canImport(AppKit)
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                #endif
             } else {
                 placeholderView
                     .onAppear {
@@ -646,7 +829,7 @@ struct CachedAsyncImage: View {
         Task {
             do {
                 let (data, _) = try await URLSession.shared.data(for: request)
-                if let uiImage = UIImage(data: data) {
+                if let uiImage = TVBoxPlatformImage(data: data) {
                     // 存入缓存
                     Self.imageCache.setObject(uiImage, forKey: urlString as NSString)
                     await MainActor.run {

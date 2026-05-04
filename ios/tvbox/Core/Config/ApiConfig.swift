@@ -253,6 +253,13 @@ class ApiConfig: ObservableObject {
             configUrl = parts[0]
         }
         
+        // Some iOS-friendly JS sources publish a sibling .js.md5 URL as a
+        // checksum marker. The real config/script lives at the same URL
+        // without the trailing .md5.
+        if configUrl.lowercased().hasSuffix(".js.md5") {
+            configUrl = String(configUrl.dropLast(4))
+        }
+        
         return configUrl
     }
     
@@ -342,6 +349,11 @@ class ApiConfig: ObservableObject {
     
     private func parseConfig(jsonString: String, apiUrl: String) throws {
         print("[parseConfig] 开始解析配置...")
+        
+        if isJavaScriptSource(jsonString) {
+            parseJavaScriptSourceConfig(scriptUrl: normalizeUrl(apiUrl))
+            return
+        }
         
         guard let data = jsonString.data(using: .utf8) else {
             print("[parseConfig] 错误: 无法转换为 Data")
@@ -465,6 +477,51 @@ class ApiConfig: ObservableObject {
         print("[parseConfig] 配置解析完成!")
     }
     
+    private func isJavaScriptSource(_ content: String) -> Bool {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("globalThis.websiteBundle") {
+            return true
+        }
+        if trimmed.hasPrefix("//bb") || trimmed.hasPrefix("//DRPY") {
+            return true
+        }
+        if trimmed.hasPrefix("export default") || trimmed.contains("__JS_SPIDER__") || trimmed.contains("__jsEvalReturn") {
+            return true
+        }
+        return false
+    }
+    
+    private func parseJavaScriptSourceConfig(scriptUrl: String) {
+        print("[parseConfig] 检测到 JS 视频源入口，按 JS 源配置处理: \(scriptUrl)")
+        
+        spider = scriptUrl
+        wallpaper = ""
+        parses = []
+        liveConfigs = []
+        vipParseFlags = []
+        hosts = [:]
+        adHosts = []
+        loadDefaultAds()
+        
+        let site = SiteBean(
+            key: "ios_js_source",
+            name: "JS视频源",
+            type: 3,
+            api: scriptUrl,
+            searchable: 1,
+            quickSearch: 1,
+            filterable: 1,
+            jar: scriptUrl
+        )
+        
+        sites = [site]
+        currentSite = site
+        userDefaults.set(site.key, forKey: Keys.homeApi)
+        defaultParse = nil
+        
+        print("[parseConfig] JS 视频源配置解析完成")
+    }
+    
     private func loadDefaultAds() {
         let defaultAds = [
             "mimg.0c1q0l.cn", "www.googletagmanager.com", "www.google-analytics.com",
@@ -523,4 +580,3 @@ extension String {
 }
 
 import CommonCrypto
-

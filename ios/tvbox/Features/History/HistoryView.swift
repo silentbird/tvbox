@@ -17,9 +17,9 @@ struct HistoryView: View {
             }
         }
         .navigationTitle("观看历史")
-        .navigationBarTitleDisplayMode(.inline)
+        .tvboxInlineNavigationBarTitle()
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .tvboxNavigationBarTrailing) {
                 if !viewModel.historyItems.isEmpty {
                     Button("清空") {
                         showClearAlert = true
@@ -57,7 +57,7 @@ struct HistoryView: View {
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .tvboxInsetGroupedListStyle()
     }
     
     private var groupedHistory: [(key: String, value: [StorageManager.VodHistoryItem])] {

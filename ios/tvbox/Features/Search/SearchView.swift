@@ -28,7 +28,7 @@ struct SearchView: View {
         }
         .background(Color.tvboxSystemGroupedBackground)
         .navigationTitle("搜索")
-        .navigationBarTitleDisplayMode(.inline)
+        .tvboxInlineNavigationBarTitle()
     }
     
     // MARK: - Search Bar

@@ -254,8 +254,7 @@ struct ApiInputView: View {
                     
                     TextField(placeholder, text: $inputText)
                         .textFieldStyle(.roundedBorder)
-                        .autocapitalization(.none)
-                        .autocorrectionDisabled()
+                        .tvboxUrlTextInputStyle()
                 }
                 .padding()
                 
@@ -291,9 +290,9 @@ struct ApiInputView: View {
                 .disabled(inputText.isEmpty)
             }
             .navigationTitle(title)
-            .navigationBarTitleDisplayMode(.inline)
+            .tvboxInlineNavigationBarTitle()
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .tvboxNavigationBarLeading) {
                     Button("取消") { dismiss() }
                 }
             }
@@ -339,9 +338,9 @@ struct SiteSelectorView: View {
                 }
             }
             .navigationTitle("选择站点")
-            .navigationBarTitleDisplayMode(.inline)
+            .tvboxInlineNavigationBarTitle()
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .tvboxNavigationBarTrailing) {
                     Button("完成") { dismiss() }
                 }
             }
@@ -384,9 +383,9 @@ struct ParseSelectorView: View {
                 }
             }
             .navigationTitle("选择解析")
-            .navigationBarTitleDisplayMode(.inline)
+            .tvboxInlineNavigationBarTitle()
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .tvboxNavigationBarTrailing) {
                     Button("完成") { dismiss() }
                 }
             }
@@ -439,9 +438,9 @@ struct AboutView: View {
                 .padding(.bottom, 30)
             }
             .navigationTitle("关于")
-            .navigationBarTitleDisplayMode(.inline)
+            .tvboxInlineNavigationBarTitle()
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .tvboxNavigationBarTrailing) {
                     Button("完成") { dismiss() }
                 }
             }

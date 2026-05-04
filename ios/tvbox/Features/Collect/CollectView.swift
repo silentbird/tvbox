@@ -21,9 +21,9 @@ struct CollectView: View {
             }
         }
         .navigationTitle("我的收藏")
-        .navigationBarTitleDisplayMode(.inline)
+        .tvboxInlineNavigationBarTitle()
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .tvboxNavigationBarTrailing) {
                 if !viewModel.collectItems.isEmpty {
                     Button("清空") {
                         showClearAlert = true

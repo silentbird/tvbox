@@ -46,7 +46,7 @@ struct PlayerView: View {
                 }
             }
         }
-        .statusBar(hidden: true)
+        .tvboxStatusBar(hidden: true)
         .onAppear {
             viewModel.loadVideo(url: episode.url)
             scheduleHideControls()
@@ -346,4 +346,3 @@ class PlayerViewModel: ObservableObject {
         }
     }
 }
-

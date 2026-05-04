@@ -23,15 +23,15 @@ struct LiveView: View {
         }
         .background(Color.tvboxSystemGroupedBackground)
         .navigationTitle("直播")
-        .navigationBarTitleDisplayMode(.inline)
+        .tvboxInlineNavigationBarTitle()
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .tvboxNavigationBarTrailing) {
                 Button(action: { viewModel.refreshChannels() }) {
                     Image(systemName: "arrow.clockwise")
                 }
             }
         }
-        .fullScreenCover(isPresented: $showPlayer) {
+        .tvboxFullScreenCover(isPresented: $showPlayer) {
             if let channel = selectedChannel {
                 LivePlayerView(channel: channel)
             }
@@ -302,7 +302,7 @@ struct LivePlayerView: View {
                 .padding()
             }
         }
-        .statusBar(hidden: true)
+        .tvboxStatusBar(hidden: true)
         .onAppear {
             if !channel.channelUrls.isEmpty {
                 viewModel.loadChannel(url: channel.channelUrls[currentSourceIndex])
