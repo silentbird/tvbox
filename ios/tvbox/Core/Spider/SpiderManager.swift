@@ -1,11 +1,10 @@
 import Foundation
 
 /// Spider 管理器 - 管理所有爬虫实例
-class SpiderManager {
+actor SpiderManager {
     static let shared = SpiderManager()
     
     private var spiders: [String: Spider] = [:]
-    private let lock = NSLock()
     private let apiConfig = ApiConfig.shared
     
     private init() {}
@@ -16,15 +15,10 @@ class SpiderManager {
     /// - Parameter site: 站点配置
     /// - Returns: Spider 实例
     func getSpider(for site: SiteBean) async throws -> Spider {
-        lock.lock()
-        
         // 检查缓存
         if let spider = spiders[site.key] {
-            lock.unlock()
             return spider
         }
-        
-        lock.unlock()
         
         // 根据站点类型创建不同的 Spider
         var spider = try createSpider(for: site)
@@ -36,7 +30,7 @@ class SpiderManager {
             if case .unsupported(let msg) = error,
                msg.contains("QuickJS") || msg.contains("字节码") || msg.contains("二进制"),
                site.type == 3 {
-                print("[SpiderManager] JsSpider 失败，尝试 QuickJSSpider: \(msg)")
+                AppLogger.debug("[SpiderManager] JsSpider 失败，尝试 QuickJSSpider: \(msg)")
                 spider = QuickJSSpider(site: site)
                 try await spider.initialize(ext: site.ext)
             } else {
@@ -44,9 +38,7 @@ class SpiderManager {
             }
         }
         
-        lock.lock()
         spiders[site.key] = spider
-        lock.unlock()
         
         return spider
     }
@@ -61,9 +53,6 @@ class SpiderManager {
     
     /// 清除指定站点的 Spider
     func clearSpider(for siteKey: String) {
-        lock.lock()
-        defer { lock.unlock() }
-        
         if let spider = spiders[siteKey] {
             spider.destroy()
             spiders.removeValue(forKey: siteKey)
@@ -72,9 +61,6 @@ class SpiderManager {
     
     /// 清除所有 Spider
     func clearAll() {
-        lock.lock()
-        defer { lock.unlock() }
-        
         for spider in spiders.values {
             spider.destroy()
         }
@@ -100,6 +86,9 @@ class SpiderManager {
         case 4:
             // 远程类型 - 需要先加载远程配置
             throw SpiderError.unsupported("远程类型站点暂不支持")
+            
+        case 8:
+            throw SpiderError.unsupported(SiteBean.websiteBundleUnsupportedMessage)
             
         default:
             throw SpiderError.unsupported("未知站点类型: \(site.type)")
@@ -141,4 +130,3 @@ extension SpiderManager {
         return try await spider.playerContent(flag: flag, id: id, vipFlags: vipFlags)
     }
 }
-

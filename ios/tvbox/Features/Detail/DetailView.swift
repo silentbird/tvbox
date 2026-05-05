@@ -225,6 +225,7 @@ struct DetailView: View {
 }
 
 // MARK: - Detail ViewModel
+@MainActor
 class DetailViewModel: ObservableObject {
     @Published var vodInfo: VodInfo?
     @Published var isLoading = false
@@ -323,7 +324,7 @@ class DetailViewModel: ObservableObject {
             } catch {
                 await MainActor.run {
                     self.error = error
-                    self.parseStatus = "解析失败: \(error.localizedDescription)"
+                    self.parseStatus = "解析失败: \(AppErrorMessage.userMessage(for: error))"
                     self.isLoadingPlayer = false
                 }
             }

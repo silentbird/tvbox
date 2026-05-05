@@ -15,7 +15,7 @@ Use this checklist before larger feature work and before sharing a build.
 
 - [ ] App launches without crashing.
 - [ ] Empty state asks for a config source.
-- [ ] Config input accepts an HTTP/HTTPS TVBox JSON URL.
+- [ ] Config input accepts a JS checksum source such as `https://9280.kstore.vip/cat/index.js.md5`, loads the sibling `.js` script, identifies it as a Cat WebsiteBundle source, and shows the iOS runtime unsupported state clearly.
 - [ ] Invalid config URL shows a readable error.
 - [ ] Valid config loads and is cached.
 - [ ] Relaunch uses cached config or reloads gracefully.
@@ -73,4 +73,5 @@ Record the config sources used for each smoke test run:
 
 | Date | Platform | Config Source | Result | Notes |
 |------|----------|---------------|--------|-------|
+| 2026-05-05 | iOS/Catalyst build | `https://9280.kstore.vip/cat/index.js.md5` | Pending runtime smoke | `.js.md5` returns a checksum; app should normalize to sibling `.js`, identify `globalThis.websiteBundle`, and avoid treating it as a traditional Spider. |
 |      |          |               |        |       |

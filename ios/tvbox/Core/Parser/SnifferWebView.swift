@@ -3,6 +3,7 @@ import WebKit
 
 /// WebView 嗅探器 - 对应 Android 的 WebView 嗅探功能
 /// 使用 WKWebView 加载解析页面，拦截视频请求获取直链
+@MainActor
 class SnifferWebView: NSObject {
     
     // MARK: - Properties
@@ -35,21 +36,15 @@ class SnifferWebView: NSObject {
         
         return try await withCheckedThrowingContinuation { continuation in
             self.continuation = continuation
-            
-            // 在主线程创建和配置 WebView
-            DispatchQueue.main.async { [weak self] in
-                self?.setupWebView()
-                self?.loadUrl(url)
-                self?.startTimeoutTimer()
-            }
+            setupWebView()
+            loadUrl(url)
+            startTimeoutTimer()
         }
     }
     
     /// 停止嗅探
     func stop() {
-        DispatchQueue.main.async { [weak self] in
-            self?.cleanup()
-        }
+        cleanup()
     }
     
     // MARK: - Private Methods
@@ -61,10 +56,6 @@ class SnifferWebView: NSObject {
         configuration.allowsInlineMediaPlayback = true
         configuration.mediaTypesRequiringUserActionForPlayback = []
         #endif
-        
-        // 设置 URL Scheme Handler 来拦截请求
-        let schemeHandler = VideoSchemeHandler(delegate: self)
-        // 注意: 无法拦截 http/https, 但可以通过其他方式
         
         // 创建 UserContentController 注入脚本
         let userContentController = WKUserContentController()
@@ -93,8 +84,6 @@ class SnifferWebView: NSObject {
             webView?.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
         }
         
-        // 允许任意加载
-        webView?.configuration.preferences.javaScriptEnabled = true
     }
     
     private func loadUrl(_ urlString: String) {
@@ -113,7 +102,7 @@ class SnifferWebView: NSObject {
         }
         
         webView?.load(request)
-        print("[SnifferWebView] 开始加载: \(urlString)")
+        AppLogger.debug("[SnifferWebView] 开始加载: \(urlString)")
     }
     
     private func startTimeoutTimer() {
@@ -144,7 +133,7 @@ class SnifferWebView: NSObject {
             return
         }
         
-        print("[SnifferWebView] 发现视频: \(urlString)")
+        AppLogger.debug("[SnifferWebView] 发现视频: \(urlString)")
         
         let video = SniffedVideo(
             url: urlString,
@@ -321,12 +310,12 @@ extension SnifferWebView: WKNavigationDelegate {
     }
     
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        print("[SnifferWebView] 导航失败: \(error.localizedDescription)")
+        AppLogger.debug("[SnifferWebView] 导航失败: \(error.localizedDescription)")
         // 不立即失败，等待超时
     }
     
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        print("[SnifferWebView] 加载失败: \(error.localizedDescription)")
+        AppLogger.debug("[SnifferWebView] 加载失败: \(error.localizedDescription)")
         // 不立即失败，等待超时
     }
 }
@@ -343,7 +332,7 @@ extension SnifferWebView: WKScriptMessageHandler {
         }
         
         let type = body["type"] as? String ?? "unknown"
-        print("[SnifferWebView] JS拦截 [\(type)]: \(url)")
+        AppLogger.debug("[SnifferWebView] JS拦截 [\(type)]: \(url)")
         
         checkUrl(url)
     }

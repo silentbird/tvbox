@@ -26,10 +26,9 @@ class QuickJSSpider: Spider {
     
     func initialize(ext: String?) async throws {
         // 在主线程创建 WKWebView
-        try await MainActor.run {
+        await MainActor.run {
             // 配置 WKWebView
             let config = WKWebViewConfiguration()
-            config.preferences.javaScriptEnabled = true
             
             // 添加消息处理器
             let handler = QuickJSMessageHandler()
@@ -136,7 +135,7 @@ class QuickJSSpider: Spider {
         }
         
         let data = try await httpUtil.data(url: url)
-        print("[QuickJSSpider] 下载脚本成功，数据长度: \(data.count)")
+        AppLogger.debug("[QuickJSSpider] 下载脚本成功，数据长度: \(data.count)")
         
         // 解析脚本内容
         var scriptContent: String?
@@ -147,7 +146,7 @@ class QuickJSSpider: Spider {
             
             // 检查 ZIP/JAR 格式（魔数: 50 4B 03 04 = "PK..")
             if header[0] == 0x50 && header[1] == 0x4B && header[2] == 0x03 && header[3] == 0x04 {
-                print("[QuickJSSpider] 检测到 ZIP/JAR 格式，尝试解压")
+                AppLogger.debug("[QuickJSSpider] 检测到 ZIP/JAR 格式，尝试解压")
                 scriptContent = try extractJsFromZip(data: data, className: className)
             }
         }
@@ -162,19 +161,19 @@ class QuickJSSpider: Spider {
                     if decodedData.count > 4 {
                         let header = Array(decodedData.prefix(4))
                         if header[0] == 0x50 && header[1] == 0x4B {
-                            print("[QuickJSSpider] //bb 格式解码后是 ZIP，尝试解压")
+                            AppLogger.debug("[QuickJSSpider] //bb 格式解码后是 ZIP，尝试解压")
                             scriptContent = try extractJsFromZip(data: decodedData, className: className)
                         }
                     }
                 }
                 
                 if scriptContent == nil {
-                    print("[QuickJSSpider] 检测到 //bb 格式，尝试查找源码版本")
+                    AppLogger.debug("[QuickJSSpider] 检测到 //bb 格式，尝试查找源码版本")
                     scriptContent = try await tryFetchSourceVersion(originalUrl: scriptUrl)
                 }
             } else if utf8Str.hasPrefix("//DRPY") {
                 // DRPY 格式
-                print("[QuickJSSpider] 检测到 //DRPY 格式，尝试查找源码版本")
+                AppLogger.debug("[QuickJSSpider] 检测到 //DRPY 格式，尝试查找源码版本")
                 scriptContent = try await tryFetchSourceVersion(originalUrl: scriptUrl)
             } else {
                 // 普通 JavaScript 源码
@@ -184,7 +183,7 @@ class QuickJSSpider: Spider {
         
         // 如果是二进制格式（UTF-8 解码失败且不是 ZIP）
         if scriptContent == nil {
-            print("[QuickJSSpider] 检测到未知二进制格式，尝试查找源码版本")
+            AppLogger.debug("[QuickJSSpider] 检测到未知二进制格式，尝试查找源码版本")
             scriptContent = try await tryFetchSourceVersion(originalUrl: scriptUrl)
         }
         
@@ -221,7 +220,7 @@ class QuickJSSpider: Spider {
         """
         
         // 在 WebView 中执行脚本
-        try await MainActor.run {
+        _ = await MainActor.run {
             webView?.loadHTMLString("<html><head></head><body></body></html>", baseURL: nil)
         }
         
@@ -231,7 +230,7 @@ class QuickJSSpider: Spider {
         // 执行脚本
         let _ = try await evaluateJS(fullScript)
         let initResult = try await evaluateJS(initScript)
-        print("[QuickJSSpider] 初始化结果: \(initResult)")
+        AppLogger.debug("[QuickJSSpider] 初始化结果: \(initResult)")
     }
     
     private func resolveScriptReference(_ rawUrl: String) async -> (url: String, md5: String, className: String) {
@@ -265,7 +264,7 @@ class QuickJSSpider: Spider {
                 md5Hash = await fetchMD5(from: md5Url) ?? ""
             }
             scriptUrl = String(scriptUrl.dropLast(4))
-            print("[QuickJSSpider] 检测到 .js.md5 校验地址，真实脚本 URL: \(scriptUrl)")
+            AppLogger.debug("[QuickJSSpider] 检测到 .js.md5 校验地址，真实脚本 URL: \(scriptUrl)")
         }
         
         return (scriptUrl, md5Hash, className)
@@ -281,7 +280,7 @@ class QuickJSSpider: Spider {
             let md5 = extractMD5(from: md5Text)
             return md5.isEmpty ? nil : md5
         } catch {
-            print("[QuickJSSpider] 获取 MD5 校验失败，继续加载真实 JS: \(error.localizedDescription)")
+            AppLogger.debug("[QuickJSSpider] 获取 MD5 校验失败，继续加载真实 JS: \(error.localizedDescription)")
             return nil
         }
     }
@@ -389,7 +388,7 @@ class QuickJSSpider: Spider {
                     }
                     
                     if let content = jsContent, !content.isEmpty {
-                        print("[QuickJSSpider] 找到 JS 文件: \(fileName), 大小: \(content.count)")
+                        AppLogger.debug("[QuickJSSpider] 找到 JS 文件: \(fileName), 大小: \(content.count)")
                         jsFiles.append((name: fileName, content: content))
                     }
                 }
@@ -407,7 +406,7 @@ class QuickJSSpider: Spider {
                 let baseName = (file.name as NSString).deletingPathExtension
                 if baseName.lowercased() == className.lowercased() ||
                    file.name.lowercased().contains(className.lowercased()) {
-                    print("[QuickJSSpider] 使用匹配的 JS 文件: \(file.name)")
+                    AppLogger.debug("[QuickJSSpider] 使用匹配的 JS 文件: \(file.name)")
                     return file.content
                 }
             }
@@ -417,14 +416,14 @@ class QuickJSSpider: Spider {
         let mainFileNames = ["index.js", "main.js", "spider.js", "app.js"]
         for mainName in mainFileNames {
             if let file = jsFiles.first(where: { $0.name.lowercased().hasSuffix(mainName) }) {
-                print("[QuickJSSpider] 使用入口文件: \(file.name)")
+                AppLogger.debug("[QuickJSSpider] 使用入口文件: \(file.name)")
                 return file.content
             }
         }
         
         // 返回第一个 JS 文件
         if let firstFile = jsFiles.first {
-            print("[QuickJSSpider] 使用第一个 JS 文件: \(firstFile.name)")
+            AppLogger.debug("[QuickJSSpider] 使用第一个 JS 文件: \(firstFile.name)")
             return firstFile.content
         }
         
@@ -472,7 +471,7 @@ class QuickJSSpider: Spider {
             guard let url = URL(string: urlStr) else { continue }
             
             do {
-                print("[QuickJSSpider] 尝试获取源码: \(urlStr)")
+                AppLogger.debug("[QuickJSSpider] 尝试获取源码: \(urlStr)")
                 let data = try await httpUtil.data(url: url)
                 
                 if let content = String(data: data, encoding: .utf8),
@@ -481,7 +480,7 @@ class QuickJSSpider: Spider {
                    !content.hasPrefix("//DRPY") {
                     // 验证是否是有效的 JavaScript
                     if content.contains("function") || content.contains("class") || content.contains("var") {
-                        print("[QuickJSSpider] 找到源码版本: \(urlStr)")
+                        AppLogger.debug("[QuickJSSpider] 找到源码版本: \(urlStr)")
                         return content
                     }
                 }
@@ -637,26 +636,20 @@ class QuickJSSpider: Spider {
     }
     
     /// 执行 JavaScript
+    @MainActor
     private func evaluateJS(_ script: String) async throws -> String {
         guard let webView = webView else {
             throw SpiderError.notInitialized
         }
         
-        return try await withCheckedThrowingContinuation { continuation in
-            Task { @MainActor in
-                webView.evaluateJavaScript(script) { result, error in
-                    if let error = error {
-                        continuation.resume(throwing: SpiderError.scriptError(error.localizedDescription))
-                    } else if let result = result as? String {
-                        continuation.resume(returning: result)
-                    } else if let result = result {
-                        continuation.resume(returning: String(describing: result))
-                    } else {
-                        continuation.resume(returning: "")
-                    }
-                }
-            }
+        let result = try await webView.evaluateJavaScript(script)
+        if let result = result as? String {
+            return result
         }
+        if let result {
+            return String(describing: result)
+        }
+        return ""
     }
     
     // MARK: - Parse Methods
@@ -773,7 +766,7 @@ class QuickJSMessageHandler: NSObject, WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         switch message.name {
         case "log":
-            print("[QuickJS] \(message.body)")
+            AppLogger.debug("[QuickJS] \(message.body)")
         case "req":
             // 处理网络请求
             break

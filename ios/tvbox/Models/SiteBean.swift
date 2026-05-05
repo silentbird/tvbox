@@ -6,7 +6,7 @@ struct SiteBean: Decodable, Identifiable, Hashable {
     
     let key: String
     let name: String
-    let type: Int // 0: xml, 1: json, 3: jar, 4: remote
+    let type: Int // 0: xml, 1: json, 3: jar, 4: remote, 8: Cat WebsiteBundle
     let api: String
     let searchable: Int
     let quickSearch: Int
@@ -92,6 +92,9 @@ struct SiteBean: Decodable, Identifiable, Hashable {
     var isSearchable: Bool { searchable == 1 }
     var isQuickSearchable: Bool { quickSearch == 1 }
     var isFilterable: Bool { filterable == 1 }
+    var isWebsiteBundle: Bool { type == 8 }
+
+    static let websiteBundleUnsupportedMessage = "Cat WebsiteBundle 源已识别，但它依赖 Node/Fastify 本地服务运行时，iOS 暂不能按传统 Spider 直接调用"
 }
 
 /// 用于处理任意 JSON 值的包装类型

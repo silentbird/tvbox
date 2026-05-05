@@ -10,6 +10,6 @@ protocol HttpCallBack<T> {
 
 extension HttpCallBack {
     func onFailure(error: Error) {
-        print("Request failed: \(error.localizedDescription)")
+        AppLogger.debug("Request failed: \(error.localizedDescription)")
     }
 } 

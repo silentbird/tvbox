@@ -286,7 +286,7 @@ struct LivePlayerView: View {
                         .font(.headline)
                         .foregroundColor(.white)
                     
-                    Text(error.localizedDescription)
+                    Text(AppErrorMessage.userMessage(for: error))
                         .font(.subheadline)
                         .foregroundColor(.white.opacity(0.8))
                         .multilineTextAlignment(.center)
@@ -315,6 +315,7 @@ struct LivePlayerView: View {
 }
 
 // MARK: - Live ViewModel
+@MainActor
 class LiveViewModel: ObservableObject {
     @Published var channelGroups: [LiveChannelGroup] = []
     @Published var isLoading = false
@@ -382,7 +383,7 @@ class LiveViewModel: ObservableObject {
                 let groups = try await parserManager.loadFromConfig(config)
                 allGroups.append(contentsOf: groups)
             } catch {
-                print("加载直播源失败: \(config.name ?? "未知"): \(error)")
+                AppLogger.debug("加载直播源失败: \(config.name ?? "未知"): \(error)")
                 // 继续加载其他源
             }
         }
@@ -400,11 +401,11 @@ class LiveViewModel: ObservableObject {
                     try await epgManager.loadEpg(from: epgUrl)
                     
                     // 更新当前节目
-                    await updateCurrentPrograms()
+                    updateCurrentPrograms()
                     
                     break // 只加载第一个有效的 EPG
                 } catch {
-                    print("加载 EPG 失败: \(error)")
+                    AppLogger.debug("加载 EPG 失败: \(error)")
                 }
             }
         }
@@ -457,6 +458,7 @@ class LiveViewModel: ObservableObject {
 }
 
 // MARK: - Live Player ViewModel
+@MainActor
 class LivePlayerViewModel: ObservableObject {
     @Published var player: AVPlayer?
     @Published var isLoading = false
@@ -484,7 +486,9 @@ class LivePlayerViewModel: ObservableObject {
             queue: .main
         ) { [weak self] notification in
             if let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error {
-                self?.error = error
+                Task { @MainActor in
+                    self?.error = error
+                }
             }
         }
         

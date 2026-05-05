@@ -60,7 +60,13 @@ After iPhone Simulator works:
 
 ## Development Notes
 
-- Keep shared logic in `Core/`, `Models/`, and `Features/`.
-- Put platform-specific behavior behind small platform helpers instead of branching throughout feature views.
+- Keep source directories scoped by responsibility:
+  - `App/`: app entry and scene setup.
+  - `Core/`: config, networking, parser, spider, storage, and other shared runtime services.
+  - `Models/`: Codable/domain value types shared by iOS and Mac Catalyst.
+  - `Features/`: SwiftUI screens and feature-specific view models.
+  - `Common/`: platform-neutral helpers, extensions, logging, toasts, and reusable utilities.
+  - `Platform/`: iOS, Mac Catalyst, and future native macOS adaptation helpers.
+- Put platform-specific behavior behind small `Platform/` helpers instead of branching throughout feature views.
 - Avoid porting Android implementation details mechanically. Prefer native Apple APIs where they map cleanly.
 - Keep `ios/TODO.md` updated as work moves between priorities.

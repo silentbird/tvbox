@@ -58,7 +58,7 @@ class StorageManager {
         do {
             return try JSONDecoder().decode([VodHistoryItem].self, from: data)
         } catch {
-            print("Failed to decode vod history: \(error)")
+            AppLogger.debug("Failed to decode vod history: \(error)")
             return []
         }
     }
@@ -136,7 +136,7 @@ class StorageManager {
             let data = try JSONEncoder().encode(history)
             userDefaults.set(data, forKey: Keys.vodHistory)
         } catch {
-            print("Failed to encode vod history: \(error)")
+            AppLogger.debug("Failed to encode vod history: \(error)")
         }
     }
     
@@ -162,7 +162,7 @@ class StorageManager {
         do {
             return try JSONDecoder().decode([VodCollectItem].self, from: data)
         } catch {
-            print("Failed to decode collects: \(error)")
+            AppLogger.debug("Failed to decode collects: \(error)")
             return []
         }
     }
@@ -215,7 +215,7 @@ class StorageManager {
             let data = try JSONEncoder().encode(collects)
             userDefaults.set(data, forKey: Keys.vodCollect)
         } catch {
-            print("Failed to encode collects: \(error)")
+            AppLogger.debug("Failed to encode collects: \(error)")
         }
     }
     
@@ -250,7 +250,7 @@ class StorageManager {
             let data = try JSONEncoder().encode(item)
             userDefaults.set(data, forKey: key)
         } catch {
-            print("Failed to encode play progress: \(error)")
+            AppLogger.debug("Failed to encode play progress: \(error)")
         }
     }
 }

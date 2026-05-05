@@ -1,5 +1,5 @@
 import Foundation
-import JavaScriptCore
+@preconcurrency import JavaScriptCore
 import Compression
 
 /// JavaScript 类型站点的 Spider 实现
@@ -30,7 +30,7 @@ class JsSpider: Spider {
         // 设置异常处理
         context.exceptionHandler = { context, exception in
             if let exc = exception {
-                print("JS Error: \(exc)")
+                AppLogger.debug("JS Error: \(exc)")
             }
         }
         
@@ -48,24 +48,14 @@ class JsSpider: Spider {
             throw SpiderError.notInitialized
         }
         
-        return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global().async {
-                do {
-                    let filterStr = filter ? "true" : "false"
-                    
-                    // 注意：JS 脚本中的方法名是 home，不是 homeContent（参照 Android JsSpider）
-                    guard let result = context.evaluateScript("spider.home(\(filterStr))") else {
-                        continuation.resume(throwing: SpiderError.scriptError("home 返回空"))
-                        return
-                    }
-                    
-                    let content = try self.parseHomeContent(result)
-                    continuation.resume(returning: content)
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
+        let filterStr = filter ? "true" : "false"
+        
+        // 注意：JS 脚本中的方法名是 home，不是 homeContent（参照 Android JsSpider）
+        guard let result = context.evaluateScript("spider.home(\(filterStr))") else {
+            throw SpiderError.scriptError("home 返回空")
         }
+        
+        return try parseHomeContent(result)
     }
     
     func categoryContent(tid: String, page: Int, filter: Bool, extend: [String: String]) async throws -> CategoryContent {
@@ -73,26 +63,16 @@ class JsSpider: Spider {
             throw SpiderError.notInitialized
         }
         
-        return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global().async {
-                do {
-                    let extendJson = try JSONEncoder().encode(extend)
-                    let extendStr = String(data: extendJson, encoding: .utf8) ?? "{}"
-                    
-                    // 注意：JS 脚本中的方法名是 category，不是 categoryContent（参照 Android JsSpider）
-                    // 参数顺序: tid, pg, filter, extend（extend 需要解析为 JS 对象）
-                    guard let result = context.evaluateScript("spider.category('\(tid)', '\(page)', \(filter), JSON.parse('\(extendStr.replacingOccurrences(of: "'", with: "\\'"))'))") else {
-                        continuation.resume(throwing: SpiderError.scriptError("category 返回空"))
-                        return
-                    }
-                    
-                    let content = try self.parseCategoryContent(result)
-                    continuation.resume(returning: content)
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
+        let extendJson = try JSONEncoder().encode(extend)
+        let extendStr = String(data: extendJson, encoding: .utf8) ?? "{}"
+        
+        // 注意：JS 脚本中的方法名是 category，不是 categoryContent（参照 Android JsSpider）
+        // 参数顺序: tid, pg, filter, extend（extend 需要解析为 JS 对象）
+        guard let result = context.evaluateScript("spider.category('\(tid)', '\(page)', \(filter), JSON.parse('\(extendStr.replacingOccurrences(of: "'", with: "\\'"))'))") else {
+            throw SpiderError.scriptError("category 返回空")
         }
+        
+        return try parseCategoryContent(result)
     }
     
     func detailContent(ids: [String]) async throws -> [VodInfo] {
@@ -104,22 +84,12 @@ class JsSpider: Spider {
         let firstId = ids.first ?? ""
         let escapedId = firstId.replacingOccurrences(of: "'", with: "\\'")
         
-        return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global().async {
-                do {
-                    // 注意：JS 脚本中的方法名是 detail，不是 detailContent（参照 Android JsSpider）
-                    guard let result = context.evaluateScript("spider.detail('\(escapedId)')") else {
-                        continuation.resume(throwing: SpiderError.scriptError("detail 返回空"))
-                        return
-                    }
-                    
-                    let vodInfos = try self.parseDetailContent(result)
-                    continuation.resume(returning: vodInfos)
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
+        // 注意：JS 脚本中的方法名是 detail，不是 detailContent（参照 Android JsSpider）
+        guard let result = context.evaluateScript("spider.detail('\(escapedId)')") else {
+            throw SpiderError.scriptError("detail 返回空")
         }
+        
+        return try parseDetailContent(result)
     }
     
     func searchContent(keyword: String, quick: Bool, page: Int) async throws -> [MovieItem] {
@@ -129,37 +99,27 @@ class JsSpider: Spider {
         
         let escapedKeyword = keyword.replacingOccurrences(of: "'", with: "\\'")
         
-        return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global().async {
-                do {
-                    // 注意：JS 脚本中的方法名是 search，不是 searchContent（参照 Android JsSpider）
-                    // Android 支持两种调用方式：search(key, quick) 和 search(key, quick, pg)
-                    let script: String
-                    if page > 1 {
-                        script = "spider.search('\(escapedKeyword)', \(quick), '\(page)')"
-                    } else {
-                        script = "spider.search('\(escapedKeyword)', \(quick))"
-                    }
-                    
-                    print("[JsSpider] 执行搜索: \(script)")
-                    
-                    guard let result = context.evaluateScript(script) else {
-                        continuation.resume(throwing: SpiderError.scriptError("search 返回空"))
-                        return
-                    }
-                    
-                    let resultStr = result.toString() ?? ""
-                    print("[JsSpider] 搜索结果: \(resultStr.prefix(500))")
-                    
-                    let movies = try self.parseSearchContent(result)
-                    print("[JsSpider] 解析到 \(movies.count) 个搜索结果")
-                    continuation.resume(returning: movies)
-                } catch {
-                    print("[JsSpider] 搜索解析错误: \(error)")
-                    continuation.resume(throwing: error)
-                }
-            }
+        // 注意：JS 脚本中的方法名是 search，不是 searchContent（参照 Android JsSpider）
+        // Android 支持两种调用方式：search(key, quick) 和 search(key, quick, pg)
+        let script: String
+        if page > 1 {
+            script = "spider.search('\(escapedKeyword)', \(quick), '\(page)')"
+        } else {
+            script = "spider.search('\(escapedKeyword)', \(quick))"
         }
+        
+        AppLogger.debug("[JsSpider] 执行搜索: \(script)")
+        
+        guard let result = context.evaluateScript(script) else {
+            throw SpiderError.scriptError("search 返回空")
+        }
+        
+        let resultStr = result.toString() ?? ""
+        AppLogger.debug("[JsSpider] 搜索结果: \(resultStr.prefix(500))")
+        
+        let movies = try parseSearchContent(result)
+        AppLogger.debug("[JsSpider] 解析到 \(movies.count) 个搜索结果")
+        return movies
     }
     
     func playerContent(flag: String, id: String, vipFlags: [String]) async throws -> PlayerContent {
@@ -173,23 +133,13 @@ class JsSpider: Spider {
         let escapedId = id.replacingOccurrences(of: "'", with: "\\'")
         let escapedFlag = flag.replacingOccurrences(of: "'", with: "\\'")
         
-        return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global().async {
-                do {
-                    // 注意：JS 脚本中的方法名是 play，不是 playerContent（参照 Android JsSpider）
-                    // vipFlags 需要作为 JS 数组传递
-                    guard let result = context.evaluateScript("spider.play('\(escapedFlag)', '\(escapedId)', JSON.parse('\(vipFlagsStr)'))") else {
-                        continuation.resume(throwing: SpiderError.scriptError("play 返回空"))
-                        return
-                    }
-                    
-                    let content = try self.parsePlayerContent(result)
-                    continuation.resume(returning: content)
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
+        // 注意：JS 脚本中的方法名是 play，不是 playerContent（参照 Android JsSpider）
+        // vipFlags 需要作为 JS 数组传递
+        guard let result = context.evaluateScript("spider.play('\(escapedFlag)', '\(escapedId)', JSON.parse('\(vipFlagsStr)'))") else {
+            throw SpiderError.scriptError("play 返回空")
         }
+        
+        return try parsePlayerContent(result)
     }
     
     var supportsQuickSearch: Bool {
@@ -206,7 +156,7 @@ class JsSpider: Spider {
     private func injectGlobalObjects(_ context: JSContext) {
         // 注入 console.log
         let consoleLog: @convention(block) (String) -> Void = { message in
-            print("[JS Console] \(message)")
+            AppLogger.debug("[JS Console] \(message)")
         }
         context.setObject(consoleLog, forKeyedSubscript: "_consoleLog" as NSString)
         context.evaluateScript("var console = { log: _consoleLog, warn: _consoleLog, error: _consoleLog };")
@@ -227,7 +177,7 @@ class JsSpider: Spider {
                         promise.setValue(result, forProperty: "text")
                     }
                 } catch {
-                    print("Fetch error: \(error)")
+                    AppLogger.debug("Fetch error: \(error)")
                 }
             }
             
@@ -258,7 +208,7 @@ class JsSpider: Spider {
                 do {
                     result = try await self?.httpUtil.string(url: url) ?? ""
                 } catch {
-                    print("Req error: \(error)")
+                    AppLogger.debug("Req error: \(error)")
                 }
                 semaphore.signal()
             }
@@ -296,12 +246,12 @@ class JsSpider: Spider {
             throw SpiderError.scriptError("无效的脚本 URL: \(scriptUrl)")
         }
         
-        print("[JsSpider] ========== 脚本下载信息 ==========")
-        print("[JsSpider] 原始 URL: \(urlString)")
-        print("[JsSpider] 处理后 URL: \(scriptUrl)")
-        print("[JsSpider] 类名: \(className)")
-        print("[JsSpider] MD5: \(md5Hash.isEmpty ? "无" : md5Hash)")
-        print("[JsSpider] =====================================")
+        AppLogger.debug("[JsSpider] ========== 脚本下载信息 ==========")
+        AppLogger.debug("[JsSpider] 原始 URL: \(urlString)")
+        AppLogger.debug("[JsSpider] 处理后 URL: \(scriptUrl)")
+        AppLogger.debug("[JsSpider] 类名: \(className)")
+        AppLogger.debug("[JsSpider] MD5: \(md5Hash.isEmpty ? "无" : md5Hash)")
+        AppLogger.debug("[JsSpider] =====================================")
         
         // 尝试从缓存加载或下载脚本
         let scriptContent = try await loadScriptContent(from: url, md5: md5Hash, className: className)
@@ -315,7 +265,7 @@ class JsSpider: Spider {
         if scriptContent.trimmingCharacters(in: .whitespaces).hasPrefix("{") {
             // 可能是 JSON 错误响应
             if scriptContent.contains("\"code\"") && (scriptContent.contains("\"message\"") || scriptContent.contains("\"error\"")) {
-                print("[JsSpider] 检测到可能的错误响应: \(scriptContent.prefix(200))")
+                AppLogger.debug("[JsSpider] 检测到可能的错误响应: \(scriptContent.prefix(200))")
                 throw SpiderError.scriptError("服务器返回错误响应，可能文件不存在")
             }
         }
@@ -383,7 +333,7 @@ class JsSpider: Spider {
                 md5Hash = await fetchMD5(from: md5Url) ?? ""
             }
             scriptUrl = String(scriptUrl.dropLast(4))
-            print("[JsSpider] 检测到 .js.md5 校验地址，真实脚本 URL: \(scriptUrl)")
+            AppLogger.debug("[JsSpider] 检测到 .js.md5 校验地址，真实脚本 URL: \(scriptUrl)")
         }
         
         return ScriptReference(url: scriptUrl, md5: md5Hash, className: className)
@@ -399,7 +349,7 @@ class JsSpider: Spider {
             let md5 = extractMD5(from: md5Text)
             return md5.isEmpty ? nil : md5
         } catch {
-            print("[JsSpider] 获取 MD5 校验失败，继续加载真实 JS: \(error.localizedDescription)")
+            AppLogger.debug("[JsSpider] 获取 MD5 校验失败，继续加载真实 JS: \(error.localizedDescription)")
             return nil
         }
     }
@@ -437,7 +387,7 @@ class JsSpider: Spider {
                 // 如果有 md5 校验，验证缓存文件的 md5
                 let fileMd5 = content.md5
                 if fileMd5.lowercased() == md5.lowercased() {
-                    print("[JsSpider] 使用缓存脚本: \(cacheFile.path)")
+                    AppLogger.debug("[JsSpider] 使用缓存脚本: \(cacheFile.path)")
                     return content
                 }
             } else if let content = cachedContent, !content.isEmpty {
@@ -445,7 +395,7 @@ class JsSpider: Spider {
                 if let attrs = try? FileManager.default.attributesOfItem(atPath: cacheFile.path),
                    let modDate = attrs[.modificationDate] as? Date,
                    Date().timeIntervalSince(modDate) < 7 * 24 * 60 * 60 {
-                    print("[JsSpider] 使用缓存脚本（一周内）: \(cacheFile.path)")
+                    AppLogger.debug("[JsSpider] 使用缓存脚本（一周内）: \(cacheFile.path)")
                     return content
                 }
             }
@@ -454,7 +404,7 @@ class JsSpider: Spider {
         // 下载脚本 - 使用 Data 而不是 String，以支持多种编码
         do {
             let data = try await httpUtil.data(url: url)
-            print("[JsSpider] 下载脚本成功，数据长度: \(data.count)")
+            AppLogger.debug("[JsSpider] 下载脚本成功，数据长度: \(data.count)")
             
             var scriptContent: String?
             
@@ -464,7 +414,7 @@ class JsSpider: Spider {
                 
                 // 检查 ZIP/JAR 格式（魔数: 50 4B 03 04 = "PK..")
                 if header[0] == 0x50 && header[1] == 0x4B && header[2] == 0x03 && header[3] == 0x04 {
-                    print("[JsSpider] 检测到 ZIP/JAR 格式，尝试解压")
+                    AppLogger.debug("[JsSpider] 检测到 ZIP/JAR 格式，尝试解压")
                     scriptContent = try extractJsFromZip(data: data, className: className)
                 }
             }
@@ -474,43 +424,43 @@ class JsSpider: Spider {
                 if let utf8String = String(data: data, encoding: .utf8), !utf8String.isEmpty {
                     // 检查是否是 //bb 或 //DRPY 开头的 Base64 编码脚本（Android 特有格式）
                     if utf8String.hasPrefix("//bb") || utf8String.hasPrefix("//DRPY") {
-                        print("[JsSpider] 检测到 \(utf8String.prefix(6)) 格式脚本，这是 Android QuickJS 字节码格式，iOS 暂不支持")
+                        AppLogger.debug("[JsSpider] 检测到 \(utf8String.prefix(6)) 格式脚本，这是 Android QuickJS 字节码格式，iOS 暂不支持")
                         throw SpiderError.unsupported("此站点使用 Android QuickJS 字节码格式，iOS 暂不支持")
                     }
                     
                     // 检查脚本内容是否包含过多控制字符（可能是二进制格式被错误解码）
                     let controlCharCount = utf8String.prefix(1000).filter { $0.asciiValue ?? 0 < 32 && $0 != "\n" && $0 != "\r" && $0 != "\t" }.count
                     if controlCharCount > 10 {
-                        print("[JsSpider] 脚本包含过多控制字符(\(controlCharCount)个)，可能是二进制格式")
+                        AppLogger.debug("[JsSpider] 脚本包含过多控制字符(\(controlCharCount)个)，可能是二进制格式")
                         throw SpiderError.unsupported("此站点使用二进制格式脚本，iOS 暂不支持")
                     }
                     
                     scriptContent = utf8String
-                    print("[JsSpider] 使用 UTF-8 编码解码成功")
+                    AppLogger.debug("[JsSpider] 使用 UTF-8 编码解码成功")
                 } else {
                     // 检查是否是其他二进制格式
                     if data.count > 4 {
                         let header = Array(data.prefix(8))
                         let hasBinaryMarker = header.prefix(4).contains(where: { $0 < 0x09 && $0 != 0x00 })
                         if hasBinaryMarker {
-                            print("[JsSpider] 检测到二进制格式脚本（前8字节: \(header.map { String(format: "%02X", $0) }.joined(separator: " "))），可能是 QuickJS 字节码，iOS 暂不支持")
+                            AppLogger.debug("[JsSpider] 检测到二进制格式脚本（前8字节: \(header.map { String(format: "%02X", $0) }.joined(separator: " "))），可能是 QuickJS 字节码，iOS 暂不支持")
                             throw SpiderError.unsupported("此站点使用 Android QuickJS 字节码格式，iOS 暂不支持")
                         }
                     }
                     
-                    print("[JsSpider] UTF-8 解码失败，这可能是二进制格式的 QuickJS 字节码")
+                    AppLogger.debug("[JsSpider] UTF-8 解码失败，这可能是二进制格式的 QuickJS 字节码")
                     throw SpiderError.unsupported("此站点使用 Android QuickJS 字节码格式，iOS 暂不支持")
                 }
             }
             
             guard let content = scriptContent, !content.isEmpty else {
-                print("[JsSpider] 无法解码脚本内容，数据长度: \(data.count)")
+                AppLogger.debug("[JsSpider] 无法解码脚本内容，数据长度: \(data.count)")
                 throw SpiderError.scriptError("无法解码脚本内容")
             }
             
             // 缓存脚本
             try? content.write(to: cacheFile, atomically: true, encoding: .utf8)
-            print("[JsSpider] 脚本已缓存: \(cacheFile.path), 内容长度: \(content.count)")
+            AppLogger.debug("[JsSpider] 脚本已缓存: \(cacheFile.path), 内容长度: \(content.count)")
             
             return content
         } catch let error as SpiderError {
@@ -518,7 +468,7 @@ class JsSpider: Spider {
         } catch {
             // 下载失败，尝试使用旧缓存
             if let cachedContent = try? String(contentsOf: cacheFile, encoding: .utf8), !cachedContent.isEmpty {
-                print("[JsSpider] 下载失败，使用旧缓存: \(error.localizedDescription)")
+                AppLogger.debug("[JsSpider] 下载失败，使用旧缓存: \(error.localizedDescription)")
                 return cachedContent
             }
             throw error
@@ -569,7 +519,7 @@ class JsSpider: Spider {
                 }
                 
                 if let content = jsContent, !content.isEmpty {
-                    print("[JsSpider] 找到 JS 文件: \(fileName), 大小: \(content.count)")
+                    AppLogger.debug("[JsSpider] 找到 JS 文件: \(fileName), 大小: \(content.count)")
                     jsFiles.append((name: fileName, content: content))
                 }
             }
@@ -583,7 +533,7 @@ class JsSpider: Spider {
                 let baseName = (file.name as NSString).deletingPathExtension
                 if baseName.lowercased() == className.lowercased() ||
                    file.name.lowercased().contains(className.lowercased()) {
-                    print("[JsSpider] 使用匹配的 JS 文件: \(file.name)")
+                    AppLogger.debug("[JsSpider] 使用匹配的 JS 文件: \(file.name)")
                     return file.content
                 }
             }
@@ -593,14 +543,14 @@ class JsSpider: Spider {
         let mainFileNames = ["index.js", "main.js", "spider.js", "app.js"]
         for mainName in mainFileNames {
             if let file = jsFiles.first(where: { $0.name.lowercased().hasSuffix(mainName) }) {
-                print("[JsSpider] 使用入口文件: \(file.name)")
+                AppLogger.debug("[JsSpider] 使用入口文件: \(file.name)")
                 return file.content
             }
         }
         
         // 返回第一个 JS 文件
         if let firstFile = jsFiles.first {
-            print("[JsSpider] 使用第一个 JS 文件: \(firstFile.name)")
+            AppLogger.debug("[JsSpider] 使用第一个 JS 文件: \(firstFile.name)")
             return firstFile.content
         }
         

@@ -1,6 +1,6 @@
 # TVBox iOS/macOS 移植路线图
 
-> 最后更新: 2026-05-04
+> 最后更新: 2026-05-05
 > 当前判断: Android 是主线成熟版；iOS 是 SwiftUI 移植版；macOS 建议优先走 Mac Catalyst，等核心链路稳定后再评估原生 macOS/AppKit 适配。
 
 ## 现在最先做什么
@@ -16,7 +16,7 @@
 
 2. **跑通最小用户链路**
    - [ ] 首次启动输入配置源。
-   - [ ] 成功解析远程配置。
+   - [x] 成功识别 `.js.md5` 入口对应的 Cat WebsiteBundle 源。
    - [ ] 首页能展示站点/分类/推荐。
    - [ ] 搜索能返回结果。
    - [ ] 详情页能加载剧集。
@@ -41,13 +41,13 @@
 - [x] 补充 `ios/SMOKE_TEST.md`，记录核心链路验证清单。
 - [x] 让 iOS generic build 通过。
 - [x] 让 Mac Catalyst build 通过。
-- [ ] 梳理 Debug 日志，避免大量 `print` 长期留在生产路径。
+- [x] 梳理 Debug 日志，避免大量 `print` 长期留在生产路径。
 - [x] 处理 iOS 17 `onChange`、废弃 API 调用、`DetailView` Swift 6 捕获警告。
-- [ ] 处理 `JsSpider`/`QuickJSSpider` 中 JavaScriptCore `Sendable` 相关 warning。
-- [ ] 给网络、配置、Spider、播放器错误加统一用户提示。
-- [ ] 检查 SwiftUI 文件是否职责过重，优先拆分 `MainView.swift` 中的首页/豆瓣/图片缓存/设置子视图。
-- [ ] 明确 iOS 和 Mac 共用代码目录，例如 `Core/`、`Models/`、`Features/`，平台差异放到 `Platform/`。
-- [ ] 给关键 ViewModel 标注 `@MainActor` 或统一主线程更新策略。
+- [x] 处理 `JsSpider`/`QuickJSSpider` 中 JavaScriptCore `Sendable` 相关 warning。
+- [x] 给网络、配置、Spider、播放器错误加统一用户提示。
+- [x] 检查 SwiftUI 文件是否职责过重，优先拆分 `MainView.swift` 中的首页/豆瓣/图片缓存/设置子视图。
+- [x] 明确 iOS 和 Mac 共用代码目录，例如 `Core/`、`Models/`、`Features/`，平台差异放到 `Platform/`。
+- [x] 给关键 ViewModel 标注 `@MainActor` 或统一主线程更新策略。
 
 ## P1 - 数据源兼容性
 
@@ -57,7 +57,10 @@
 - [x] 解析器管理 `ParseBean`
 - [x] 直播配置 `LiveConfig`
 - [x] 本地缓存机制
-- [ ] 对齐 Android 的配置解密逻辑，包括 `;pk;`、Base64/AES、`clan://`、`file://`。
+- [x] 支持 `.js.md5` JS 源入口，下载同路径 `.js` 并识别 `globalThis.websiteBundle`。
+- [x] Cat WebsiteBundle 源在首页/设置站点列表可见，并显示明确的 iOS 运行层暂不支持提示。
+- [ ] 为 Cat WebsiteBundle 补 iOS 运行层或替代解析层；该源依赖 Node/Fastify 本地服务，不能按传统 Spider 直接执行。
+- [ ] 记录暂不支持的 Android 兼容源格式，例如加密 JSON、`clan://`、`file://`。
 - [ ] 增加配置解析失败时的可读错误: URL 无效、网络失败、JSON 无效、字段缺失、加密失败。
 
 ### Spider

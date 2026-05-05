@@ -311,7 +311,7 @@ struct SiteSelectorView: View {
     var body: some View {
         NavigationView {
             List {
-                ForEach(apiConfig.filterableSites) { site in
+                ForEach(apiConfig.homeSites) { site in
                     Button(action: {
                         apiConfig.setCurrentSite(site)
                         dismiss()

@@ -44,6 +44,25 @@ struct PlayerView: View {
                         .scaleEffect(1.5)
                         .tint(.white)
                 }
+                
+                if let error = viewModel.error {
+                    VStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.largeTitle)
+                            .foregroundColor(.yellow)
+                        Text("播放失败")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                        Text(AppErrorMessage.userMessage(for: error))
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.85))
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding()
+                    .background(Color.black.opacity(0.55))
+                    .cornerRadius(8)
+                    .padding()
+                }
             }
         }
         .tvboxStatusBar(hidden: true)
@@ -221,6 +240,7 @@ struct PlayerView: View {
 }
 
 // MARK: - Player ViewModel
+@MainActor
 class PlayerViewModel: ObservableObject {
     @Published var player: AVPlayer?
     @Published var isPlaying = false
@@ -243,7 +263,7 @@ class PlayerViewModel: ObservableObject {
     
     func loadVideo(url: String) {
         // 处理 URL
-        var videoUrl = url
+        let videoUrl = url
         
         // 如果是相对路径或需要解析的 URL，这里需要处理
         guard let url = URL(string: videoUrl) else {
@@ -275,11 +295,15 @@ class PlayerViewModel: ObservableObject {
             forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
             queue: .main
         ) { [weak self] time in
-            guard let self = self, let duration = self.player?.currentItem?.duration.seconds,
-                  duration.isFinite && duration > 0 else { return }
-            
-            self.currentTime = time.seconds
-            self.progress = time.seconds / duration
+            Task { @MainActor in
+                guard let self = self,
+                      let duration = self.player?.currentItem?.duration.seconds,
+                      duration.isFinite,
+                      duration > 0 else { return }
+                
+                self.currentTime = time.seconds
+                self.progress = time.seconds / duration
+            }
         }
         
         // 监听缓冲状态
@@ -288,7 +312,9 @@ class PlayerViewModel: ObservableObject {
             object: playerItem,
             queue: .main
         ) { [weak self] _ in
-            self?.isBuffering = true
+            Task { @MainActor in
+                self?.isBuffering = true
+            }
         }
     }
     

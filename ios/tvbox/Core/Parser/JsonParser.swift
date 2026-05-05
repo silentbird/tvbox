@@ -22,7 +22,7 @@ class JsonParser {
             throw ParserError.noParser
         }
         
-        print("[JsonParser] 开始并发解析, 解析器数量: \(parsers.count)")
+        AppLogger.debug("[JsonParser] 开始并发解析, 解析器数量: \(parsers.count)")
         
         // 使用 TaskGroup 并发请求
         return try await withThrowingTaskGroup(of: ParseResult?.self) { group in
@@ -31,10 +31,10 @@ class JsonParser {
                 group.addTask { [self] in
                     do {
                         let result = try await self.singleParse(parser: parser, videoUrl: videoUrl)
-                        print("[JsonParser] 解析成功: \(parser.name) -> \(result.url)")
+                        AppLogger.debug("[JsonParser] 解析成功: \(parser.name) -> \(result.url)")
                         return result
                     } catch {
-                        print("[JsonParser] 解析失败: \(parser.name) - \(error.localizedDescription)")
+                        AppLogger.debug("[JsonParser] 解析失败: \(parser.name) - \(error.localizedDescription)")
                         return nil
                     }
                 }
@@ -91,11 +91,6 @@ class JsonParser {
             // 提取 headers
             if let headerDict = extJson["header"] as? [String: String] {
                 headers.merge(headerDict) { _, new in new }
-            }
-            
-            // 处理 flag 筛选 (如果有的话)
-            if let flags = extJson["flag"] as? [String] {
-                // 可以根据 flag 过滤
             }
             
             // 将 ext 编码到 URL
@@ -227,4 +222,3 @@ struct ParseResult {
         )
     }
 }
-

@@ -126,32 +126,32 @@ class OkHttpHelper {
             request.setValue(value, forHTTPHeaderField: key)
         }
         
-        print("[OkHttpHelper] GET 请求: \(url.absoluteString)")
-        print("[OkHttpHelper] 请求头: \(allHeaders)")
+        AppLogger.debug("[OkHttpHelper] GET 请求: \(url.absoluteString)")
+        AppLogger.debug("[OkHttpHelper] 请求头: \(allHeaders)")
         
         do {
             let (data, response) = try await defaultSession.data(for: request)
             
             if let httpResponse = response as? HTTPURLResponse {
-                print("[OkHttpHelper] 响应状态码: \(httpResponse.statusCode)")
-                print("[OkHttpHelper] 响应头: \(httpResponse.allHeaderFields)")
+                AppLogger.debug("[OkHttpHelper] 响应状态码: \(httpResponse.statusCode)")
+                AppLogger.debug("[OkHttpHelper] 响应头: \(httpResponse.allHeaderFields)")
             }
-            print("[OkHttpHelper] 响应数据长度: \(data.count)")
+            AppLogger.debug("[OkHttpHelper] 响应数据长度: \(data.count)")
             
             // 如果数据为空但状态码是成功的，打印响应内容
             if data.isEmpty {
-                print("[OkHttpHelper] 警告: 响应数据为空")
+                AppLogger.debug("[OkHttpHelper] 警告: 响应数据为空")
             } else if data.count < 500 {
-                print("[OkHttpHelper] 响应内容: \(String(data: data, encoding: .utf8) ?? "无法解码")")
+                AppLogger.debug("[OkHttpHelper] 响应内容: \(String(data: data, encoding: .utf8) ?? "无法解码")")
             }
             
             return (data, response)
         } catch {
-            print("[OkHttpHelper] 请求失败: \(error)")
-            print("[OkHttpHelper] 错误详情: \(error.localizedDescription)")
+            AppLogger.debug("[OkHttpHelper] 请求失败: \(error)")
+            AppLogger.debug("[OkHttpHelper] 错误详情: \(error.localizedDescription)")
             if let urlError = error as? URLError {
-                print("[OkHttpHelper] URLError 代码: \(urlError.code.rawValue)")
-                print("[OkHttpHelper] URLError 描述: \(urlError.localizedDescription)")
+                AppLogger.debug("[OkHttpHelper] URLError 代码: \(urlError.code.rawValue)")
+                AppLogger.debug("[OkHttpHelper] URLError 描述: \(urlError.localizedDescription)")
             }
             throw error
         }

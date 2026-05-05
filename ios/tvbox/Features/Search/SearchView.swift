@@ -14,6 +14,14 @@ struct SearchView: View {
                 Spacer()
                 ProgressView("搜索中...")
                 Spacer()
+            } else if let error = viewModel.error {
+                Spacer()
+                ContentUnavailableView(
+                    "搜索失败",
+                    systemImage: "exclamationmark.magnifyingglass",
+                    description: Text(AppErrorMessage.userMessage(for: error))
+                )
+                Spacer()
             } else if viewModel.searchText.isEmpty {
                 historySection
             } else if viewModel.results.isEmpty && !viewModel.searchText.isEmpty {
@@ -273,6 +281,7 @@ struct FlowLayout: Layout {
 }
 
 // MARK: - Search ViewModel
+@MainActor
 class SearchViewModel: ObservableObject {
     @Published var searchText = ""
     @Published var results: [MovieItem] = []
@@ -383,7 +392,7 @@ class SearchViewModel: ObservableObject {
                         let spider = try await self.spiderManager.getSpider(for: site)
                         return try await spider.searchContent(keyword: keyword, quick: true, page: 1)
                     } catch {
-                        print("Quick search error for \(site.name): \(error)")
+                        AppLogger.debug("Quick search error for \(site.name): \(error)")
                         return []
                     }
                 }
@@ -417,7 +426,7 @@ class SearchViewModel: ObservableObject {
                             let spider = try await self.spiderManager.getSpider(for: site)
                             return try await spider.searchContent(keyword: keyword, quick: false, page: 1)
                         } catch {
-                            print("Aggregate search error for \(site.name): \(error)")
+                            AppLogger.debug("Aggregate search error for \(site.name): \(error)")
                             return []
                         }
                     }

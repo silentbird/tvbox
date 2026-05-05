@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 
+@MainActor
 class HomeViewModel: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var isLoadingMore: Bool = false
@@ -55,7 +56,7 @@ class HomeViewModel: ObservableObject {
                 await MainActor.run {
                     self.error = error
                     self.isLoading = false
-                    self.showToast(message: error.localizedDescription)
+                    self.showToast(message: AppErrorMessage.userMessage(for: error))
                 }
             }
         }
@@ -181,7 +182,7 @@ class HomeViewModel: ObservableObject {
                 }
             } catch {
                 await MainActor.run {
-                    self.showToast(message: error.localizedDescription)
+                    self.showToast(message: AppErrorMessage.userMessage(for: error))
                     self.isLoading = false
                     self.isLoadingMore = false
                 }
@@ -212,7 +213,7 @@ class HomeViewModel: ObservableObject {
                         let spider = try await self.spiderManager.getSpider(for: site)
                         return try await spider.searchContent(keyword: keyword, quick: true, page: 1)
                     } catch {
-                        print("Quick search error for \(site.name): \(error)")
+                        AppLogger.debug("Quick search error for \(site.name): \(error)")
                         return []
                     }
                 }
@@ -259,11 +260,15 @@ class HomeViewModel: ObservableObject {
         searchPage = 1
         hasMoreSearchResults = true
         
-        // 清除旧站点的 Spider
-        spiderManager.clearAll()
-        
-        // 加载新站点的内容
-        loadCategories()
+        Task {
+            // 清除旧站点的 Spider
+            await spiderManager.clearAll()
+            
+            // 加载新站点的内容
+            await MainActor.run {
+                self.loadCategories()
+            }
+        }
     }
     
     private func showToast(message: String) {

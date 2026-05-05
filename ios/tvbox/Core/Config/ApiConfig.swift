@@ -1,32 +1,6 @@
+import CryptoKit
 import Foundation
 import Combine
-
-/// 远程配置数据结构
-struct RemoteConfig: Decodable {
-    let spider: String?
-    let wallpaper: String?
-    let sites: [SiteBean]?
-    let parses: [ParseBean]?
-    let lives: [LiveConfig]?
-    let rules: [VideoRule]?
-    let doh: [DohConfig]?
-    let hosts: [String]?
-    let ads: [String]?
-    let flags: [String]?
-    
-    struct VideoRule: Decodable {
-        let host: String?
-        let hosts: [String]?
-        let rule: [String]?
-        let filter: [String]?
-        let regex: [String]?
-    }
-    
-    struct DohConfig: Decodable {
-        let name: String
-        let url: String
-    }
-}
 
 /// API 配置管理器 - 对应 Android 的 ApiConfig
 class ApiConfig: ObservableObject {
@@ -72,7 +46,7 @@ class ApiConfig: ObservableObject {
     var apiUrl: String {
         get { userDefaults.string(forKey: Keys.apiUrl) ?? "" }
         set { 
-            print("[ApiConfig] apiUrl setter: \(newValue)")
+            AppLogger.debug("[ApiConfig] apiUrl setter: \(newValue)")
             userDefaults.set(newValue, forKey: Keys.apiUrl)
         }
     }
@@ -85,17 +59,17 @@ class ApiConfig: ObservableObject {
     
     /// 加载配置
     func loadConfig(useCache: Bool = true) async throws {
-        print("[ApiConfig] ========== loadConfig 开始 ==========")
-        print("[ApiConfig] useCache: \(useCache), apiUrl: \(apiUrl)")
+        AppLogger.debug("[ApiConfig] ========== loadConfig 开始 ==========")
+        AppLogger.debug("[ApiConfig] useCache: \(useCache), apiUrl: \(apiUrl)")
         
         guard !apiUrl.isEmpty else {
-            print("[ApiConfig] 错误: apiUrl 为空")
+            AppLogger.debug("[ApiConfig] 错误: apiUrl 为空")
             throw ConfigError.noApiUrl
         }
         
         // 防止重复加载
         guard !isLoading else {
-            print("[ApiConfig] 配置正在加载中，跳过重复请求")
+            AppLogger.debug("[ApiConfig] 配置正在加载中，跳过重复请求")
             return
         }
         
@@ -106,55 +80,43 @@ class ApiConfig: ObservableObject {
         
         do {
             let configUrl = normalizeUrl(apiUrl)
-            print("[ApiConfig] 规范化后的URL: \(configUrl)")
+            AppLogger.debug("[ApiConfig] 规范化后的URL: \(configUrl)")
             
             // 尝试从缓存加载
             if useCache, let cachedData = getCachedConfig(for: apiUrl) {
-                print("[ApiConfig] 从缓存加载配置，数据长度: \(cachedData.count)")
+                AppLogger.debug("[ApiConfig] 从缓存加载配置，数据长度: \(cachedData.count)")
                 do {
                     try await MainActor.run {
-                        try parseConfig(jsonString: cachedData, apiUrl: apiUrl)
+                        try parseConfig(scriptContent: cachedData, apiUrl: apiUrl)
                         isLoading = false
                         configLoaded = true
                     }
-                    print("[ApiConfig] 缓存加载完成")
+                    AppLogger.debug("[ApiConfig] 缓存加载完成")
                     return
                 } catch {
-                    print("[ApiConfig] 缓存解析失败，清除缓存并重新从网络加载: \(error.localizedDescription)")
+                    AppLogger.debug("[ApiConfig] 缓存解析失败，清除缓存并重新从网络加载: \(error.localizedDescription)")
                     clearCache()
                     // 继续从网络加载
                 }
             }
             
-            // 从网络加载
-            print("[ApiConfig] 尝试创建URL: \(configUrl)")
-            guard let url = createURL(from: configUrl) else {
-                print("[ApiConfig] 错误: 无效的URL - '\(configUrl)'")
-                throw ConfigError.invalidUrl
-            }
-            
-            print("[ApiConfig] 创建的URL对象: \(url.absoluteString)")
-            print("[ApiConfig] 开始网络请求...")
-            let jsonString = try await httpUtil.string(url: url)
-            print("[ApiConfig] 网络请求完成，响应长度: \(jsonString.count)")
-            
-            let processedJson = processConfigJson(jsonString)
-            print("[ApiConfig] 处理后的JSON长度: \(processedJson.count)")
+            let jsonString = try await loadConfigContent(normalizedUrl: configUrl)
+            AppLogger.debug("[ApiConfig] 配置内容加载完成，响应长度: \(jsonString.count)")
             
             // 缓存配置
-            cacheConfig(processedJson, for: apiUrl)
-            print("[ApiConfig] 配置已缓存")
+            cacheConfig(jsonString, for: apiUrl)
+            AppLogger.debug("[ApiConfig] 配置已缓存")
             
             // 解析配置 (在主线程上执行，因为会修改 @Published 属性)
-            print("[ApiConfig] 开始解析配置...")
+            AppLogger.debug("[ApiConfig] 开始解析配置...")
             try await MainActor.run {
-                try parseConfig(jsonString: processedJson, apiUrl: apiUrl)
+                try parseConfig(scriptContent: jsonString, apiUrl: apiUrl)
                 isLoading = false
                 configLoaded = true
             }
-            print("[ApiConfig] ========== loadConfig 完成 ==========")
+            AppLogger.debug("[ApiConfig] ========== loadConfig 完成 ==========")
         } catch {
-            print("[ApiConfig] 加载失败: \(error.localizedDescription)")
+            AppLogger.debug("[ApiConfig] 加载失败: \(error.localizedDescription)")
             await MainActor.run {
                 self.error = error
                 isLoading = false
@@ -171,6 +133,11 @@ class ApiConfig: ObservableObject {
     /// 获取可显示在首页的站点列表
     var filterableSites: [SiteBean] {
         sites.filter { $0.isFilterable }
+    }
+
+    /// 获取首页站点选择器中应该可见的站点列表
+    var homeSites: [SiteBean] {
+        sites.filter { $0.isFilterable || $0.isWebsiteBundle }
     }
     
     /// 设置当前站点
@@ -214,7 +181,7 @@ class ApiConfig: ObservableObject {
         if !url.isEmpty {
             let cacheKey = "\(Keys.cachedConfig)_\(url.md5)"
             userDefaults.removeObject(forKey: cacheKey)
-            print("[ApiConfig] 已清除缓存: \(cacheKey)")
+            AppLogger.debug("[ApiConfig] 已清除缓存: \(cacheKey)")
         }
     }
     
@@ -223,65 +190,56 @@ class ApiConfig: ObservableObject {
         clearCache()
         clearConfig()
         userDefaults.removeObject(forKey: Keys.apiUrl)
-        print("[ApiConfig] 已重置所有配置")
+        AppLogger.debug("[ApiConfig] 已重置所有配置")
     }
     
     // MARK: - Private Methods
     
     private func normalizeUrl(_ url: String) -> String {
-        var configUrl = url
+        var configUrl = url.trimmingCharacters(in: .whitespacesAndNewlines)
         
-        // 处理 clan:// 协议
-        if configUrl.hasPrefix("clan://localhost/") {
-            configUrl = configUrl.replacingOccurrences(of: "clan://localhost/", with: "http://127.0.0.1:9978/file/")
-        } else if configUrl.hasPrefix("clan://") {
-            let link = String(configUrl.dropFirst(7))
-            if let endIndex = link.firstIndex(of: "/") {
-                let host = String(link[..<endIndex])
-                let path = String(link[link.index(after: endIndex)...])
-                configUrl = "http://\(host)/file/\(path)"
-            }
-        } else if configUrl.hasPrefix("file://") {
-            configUrl = configUrl.replacingOccurrences(of: "file://", with: "http://127.0.0.1:9978/file/")
-        } else if !configUrl.hasPrefix("http") {
-            configUrl = "http://\(configUrl)"
+        if !configUrl.hasPrefix("http://"), !configUrl.hasPrefix("https://") {
+            configUrl = "https://\(configUrl)"
         }
         
-        // 处理加密 key
-        if configUrl.contains(";pk;") {
-            let parts = configUrl.components(separatedBy: ";pk;")
-            configUrl = parts[0]
-        }
-        
-        // Some iOS-friendly JS sources publish a sibling .js.md5 URL as a
-        // checksum marker. The real config/script lives at the same URL
-        // without the trailing .md5.
         if configUrl.lowercased().hasSuffix(".js.md5") {
             configUrl = String(configUrl.dropLast(4))
         }
         
         return configUrl
     }
+
+    private func loadConfigContent(normalizedUrl: String) async throws -> String {
+        AppLogger.debug("[ApiConfig] 尝试创建URL: \(normalizedUrl)")
+        guard let url = createURL(from: normalizedUrl) else {
+            AppLogger.debug("[ApiConfig] 错误: 无效的URL - '\(normalizedUrl)'")
+            throw ConfigError.invalidUrl
+        }
+        
+        AppLogger.debug("[ApiConfig] 创建的URL对象: \(url.absoluteString)")
+        AppLogger.debug("[ApiConfig] 开始网络请求...")
+        return try await httpUtil.string(url: url)
+    }
     
     /// 将 URL 字符串转换为 URL 对象（支持中文域名）
     private func createURL(from urlString: String) -> URL? {
-        print("[ApiConfig] createURL 输入: \(urlString)")
+        AppLogger.debug("[ApiConfig] createURL 输入: \(urlString)")
         
         // 方法1: 直接使用 URL(string:) - iOS 会自动处理 IDN
         if let url = URL(string: urlString) {
-            print("[ApiConfig] 方法1成功: \(url.absoluteString)")
+            AppLogger.debug("[ApiConfig] 方法1成功: \(url.absoluteString)")
             return url
         }
         
         // 方法2: 使用 URLComponents
         if let components = URLComponents(string: urlString), let url = components.url {
-            print("[ApiConfig] 方法2成功: \(url.absoluteString)")
+            AppLogger.debug("[ApiConfig] 方法2成功: \(url.absoluteString)")
             return url
         }
         
         // 方法3: 对域名进行 Punycode 编码
         if let encoded = encodeIDNUrl(urlString) {
-            print("[ApiConfig] 方法3成功: \(encoded.absoluteString)")
+            AppLogger.debug("[ApiConfig] 方法3成功: \(encoded.absoluteString)")
             return encoded
         }
         
@@ -294,12 +252,12 @@ class ApiConfig: ObservableObject {
                 .replacingOccurrences(of: "%3D", with: "=")
                 .replacingOccurrences(of: "%26", with: "&")
             if let url = URL(string: fixedEncoded) {
-                print("[ApiConfig] 方法4成功: \(url.absoluteString)")
+                AppLogger.debug("[ApiConfig] 方法4成功: \(url.absoluteString)")
                 return url
             }
         }
         
-        print("[ApiConfig] 所有方法都失败了")
+        AppLogger.debug("[ApiConfig] 所有方法都失败了")
         return nil
     }
     
@@ -332,167 +290,24 @@ class ApiConfig: ObservableObject {
         return URL(string: encodedUrlString)
     }
     
-    private func processConfigJson(_ json: String) -> String {
-        var content = json
+    private func parseConfig(scriptContent: String, apiUrl: String) throws {
+        AppLogger.debug("[parseConfig] 开始解析配置...")
         
-        // 处理加密配置
-        if let range = content.range(of: "[A-Za-z0]{8}\\*\\*", options: .regularExpression) {
-            let startIndex = content.index(range.upperBound, offsetBy: 2, limitedBy: content.endIndex) ?? range.upperBound
-            let base64Content = String(content[startIndex...])
-            if let data = Data(base64Encoded: base64Content) {
-                content = String(data: data, encoding: .utf8) ?? json
-            }
-        }
-        
-        return content
-    }
-    
-    private func parseConfig(jsonString: String, apiUrl: String) throws {
-        print("[parseConfig] 开始解析配置...")
-        
-        if isJavaScriptSource(jsonString) {
-            parseJavaScriptSourceConfig(scriptUrl: normalizeUrl(apiUrl))
-            return
-        }
-        
-        guard let data = jsonString.data(using: .utf8) else {
-            print("[parseConfig] 错误: 无法转换为 Data")
+        guard isWebsiteBundleSource(scriptContent) else {
+            AppLogger.debug("[parseConfig] 不支持的配置源内容前200字符: \(String(scriptContent.prefix(200)))")
             throw ConfigError.invalidData
         }
         
-        print("[parseConfig] 开始 JSON 解码...")
-        print("[parseConfig] JSON 内容前500字符: \(String(jsonString.prefix(500)))")
-        let decoder = JSONDecoder()
-        let config: RemoteConfig
-        do {
-            config = try decoder.decode(RemoteConfig.self, from: data)
-        } catch let DecodingError.keyNotFound(key, context) {
-            print("[parseConfig] 解码错误 - 缺少键: \(key.stringValue)")
-            print("[parseConfig] 上下文: \(context.debugDescription)")
-            print("[parseConfig] 路径: \(context.codingPath.map { $0.stringValue }.joined(separator: "."))")
-            throw ConfigError.parseError(DecodingError.keyNotFound(key, context))
-        } catch let DecodingError.typeMismatch(type, context) {
-            print("[parseConfig] 解码错误 - 类型不匹配: 期望 \(type)")
-            print("[parseConfig] 上下文: \(context.debugDescription)")
-            print("[parseConfig] 路径: \(context.codingPath.map { $0.stringValue }.joined(separator: "."))")
-            throw ConfigError.parseError(DecodingError.typeMismatch(type, context))
-        } catch let DecodingError.valueNotFound(type, context) {
-            print("[parseConfig] 解码错误 - 值为空: \(type)")
-            print("[parseConfig] 上下文: \(context.debugDescription)")
-            print("[parseConfig] 路径: \(context.codingPath.map { $0.stringValue }.joined(separator: "."))")
-            throw ConfigError.parseError(DecodingError.valueNotFound(type, context))
-        } catch let DecodingError.dataCorrupted(context) {
-            print("[parseConfig] 解码错误 - 数据损坏")
-            print("[parseConfig] 上下文: \(context.debugDescription)")
-            print("[parseConfig] 路径: \(context.codingPath.map { $0.stringValue }.joined(separator: "."))")
-            throw ConfigError.parseError(DecodingError.dataCorrupted(context))
-        }
-        print("[parseConfig] JSON 解码完成")
-        
-        // 解析 spider
-        spider = config.spider ?? ""
-        print("[parseConfig] spider: \(spider.prefix(50))...")
-        
-        // 解析 wallpaper
-        wallpaper = config.wallpaper ?? ""
-        if wallpaper.hasPrefix("./") {
-            let baseUrl = String(apiUrl[..<(apiUrl.lastIndex(of: "/") ?? apiUrl.endIndex)])
-            wallpaper = baseUrl + "/" + String(wallpaper.dropFirst(2))
-        }
-        
-        // 解析站点 - 使用字典存储，相同 key 的站点会被后面的覆盖（与 Android LinkedHashMap 保持一致）
-        print("[parseConfig] 开始解析站点...")
-        var siteMap: [String: SiteBean] = [:]
-        var orderedKeys: [String] = []  // 保持插入顺序
-        for site in config.sites ?? [] {
-            if siteMap[site.key] == nil {
-                orderedKeys.append(site.key)  // 只在第一次出现时记录顺序
-            }
-            siteMap[site.key] = site  // 相同 key 后面覆盖前面
-        }
-        sites = orderedKeys.compactMap { siteMap[$0] }
-        print("[parseConfig] 解析到 \(sites.count) 个站点（去重后）")
-        
-        // 设置当前站点
-        // 只有在有保存的站点设置时才恢复，否则默认显示豆瓣热门（currentSite = nil）
-        let savedHomeKey = userDefaults.string(forKey: Keys.homeApi) ?? ""
-        if savedHomeKey == "douban_home" {
-            // 用户选择了豆瓣热门
-            currentSite = nil
-        } else if !savedHomeKey.isEmpty, let savedSite = sites.first(where: { $0.key == savedHomeKey }) {
-            // 恢复保存的站点
-            currentSite = savedSite
-        } else {
-            // 默认显示豆瓣热门
-            currentSite = nil
-        }
-        print("[parseConfig] 当前站点: \(currentSite?.name ?? "豆瓣热门")")
-        
-        // 解析解析器
-        print("[parseConfig] 开始解析解析器...")
-        parses = config.parses ?? []
-        print("[parseConfig] 解析到 \(parses.count) 个解析器")
-        
-        // 添加超级解析
-        if !parses.isEmpty {
-            let superParse = ParseBean(name: "超级解析", url: "SuperParse", type: 4)
-            parses.insert(superParse, at: 0)
-        }
-        
-        // 设置默认解析
-        let savedParseName = userDefaults.string(forKey: Keys.defaultParse) ?? ""
-        if let savedParse = parses.first(where: { $0.name == savedParseName }) {
-            var parse = savedParse
-            parse.isDefault = true
-            defaultParse = parse
-        } else if let firstParse = parses.first {
-            var parse = firstParse
-            parse.isDefault = true
-            defaultParse = parse
-        }
-        
-        // 解析 VIP 标识
-        vipParseFlags = config.flags ?? []
-        
-        // 解析直播配置
-        print("[parseConfig] 开始解析直播配置...")
-        liveConfigs = config.lives ?? []
-        print("[parseConfig] 解析到 \(liveConfigs.count) 个直播配置")
-        
-        // 解析 hosts
-        if let hostsList = config.hosts {
-            for entry in hostsList {
-                let parts = entry.components(separatedBy: "=")
-                if parts.count == 2 {
-                    hosts[parts[0]] = parts[1]
-                }
-            }
-        }
-        
-        // 解析广告
-        if let ads = config.ads {
-            adHosts.formUnion(ads)
-        }
-        
-        print("[parseConfig] 配置解析完成!")
+        parseJavaScriptSourceConfig(scriptUrl: normalizeUrl(apiUrl))
     }
     
-    private func isJavaScriptSource(_ content: String) -> Bool {
+    private func isWebsiteBundleSource(_ content: String) -> Bool {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.hasPrefix("globalThis.websiteBundle") {
-            return true
-        }
-        if trimmed.hasPrefix("//bb") || trimmed.hasPrefix("//DRPY") {
-            return true
-        }
-        if trimmed.hasPrefix("export default") || trimmed.contains("__JS_SPIDER__") || trimmed.contains("__jsEvalReturn") {
-            return true
-        }
-        return false
+        return trimmed.hasPrefix("globalThis.websiteBundle")
     }
     
     private func parseJavaScriptSourceConfig(scriptUrl: String) {
-        print("[parseConfig] 检测到 JS 视频源入口，按 JS 源配置处理: \(scriptUrl)")
+        AppLogger.debug("[parseConfig] 检测到 JS 视频源入口，按 JS 源配置处理: \(scriptUrl)")
         
         spider = scriptUrl
         wallpaper = ""
@@ -504,13 +319,13 @@ class ApiConfig: ObservableObject {
         loadDefaultAds()
         
         let site = SiteBean(
-            key: "ios_js_source",
-            name: "JS视频源",
-            type: 3,
+            key: "ios_website_bundle_source",
+            name: "Cat WebsiteBundle",
+            type: 8,
             api: scriptUrl,
-            searchable: 1,
-            quickSearch: 1,
-            filterable: 1,
+            searchable: 0,
+            quickSearch: 0,
+            filterable: 0,
             jar: scriptUrl
         )
         
@@ -519,7 +334,7 @@ class ApiConfig: ObservableObject {
         userDefaults.set(site.key, forKey: Keys.homeApi)
         defaultParse = nil
         
-        print("[parseConfig] JS 视频源配置解析完成")
+        AppLogger.debug("[parseConfig] JS 视频源配置解析完成")
     }
     
     private func loadDefaultAds() {
@@ -571,12 +386,7 @@ enum ConfigError: LocalizedError {
 extension String {
     var md5: String {
         let data = Data(self.utf8)
-        var hash = [UInt8](repeating: 0, count: Int(CC_MD5_DIGEST_LENGTH))
-        data.withUnsafeBytes {
-            _ = CC_MD5($0.baseAddress, CC_LONG(data.count), &hash)
-        }
-        return hash.map { String(format: "%02x", $0) }.joined()
+        let digest = Insecure.MD5.hash(data: data)
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 }
-
-import CommonCrypto

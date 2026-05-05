@@ -37,7 +37,7 @@ class ParserManager {
         
         // 防止无限递归
         guard depth < maxParseDepth else {
-            print("[ParserManager] 达到最大解析深度 \(maxParseDepth)，停止递归")
+            AppLogger.debug("[ParserManager] 达到最大解析深度 \(maxParseDepth)，停止递归")
             return content
         }
         
@@ -53,7 +53,7 @@ class ParserManager {
         
         // 如果结果仍需解析，递归调用
         if result.needParse && !result.url.isEmpty {
-            print("[ParserManager] 解析结果仍需继续解析 (depth=\(depth + 1))")
+            AppLogger.debug("[ParserManager] 解析结果仍需继续解析 (depth=\(depth + 1))")
             result = try await parseWithDepth(content: result, parseBean: nil, depth: depth + 1)
         }
         
@@ -66,7 +66,7 @@ class ParserManager {
     ///   - parser: 解析器
     /// - Returns: 解析后的播放内容
     func parse(url: String, parser: ParseBean) async throws -> PlayerContent {
-        var content = PlayerContent(url: url, parse: 1)
+        let content = PlayerContent(url: url, parse: 1)
         return try await doParse(content: content, parser: parser)
     }
     
@@ -210,7 +210,7 @@ class ParserManager {
                     return result
                 }
             } catch {
-                print("[ParserManager] JSON 并发解析失败: \(error)")
+                AppLogger.debug("[ParserManager] JSON 并发解析失败: \(error)")
             }
         }
         
@@ -224,7 +224,7 @@ class ParserManager {
                 do {
                     return try await superWebViewSniff(html: html, videoUrl: content.url)
                 } catch {
-                    print("[ParserManager] SuperParse WebView 嗅探失败: \(error)")
+                    AppLogger.debug("[ParserManager] SuperParse WebView 嗅探失败: \(error)")
                 }
             }
             
@@ -234,7 +234,7 @@ class ParserManager {
                 do {
                     return try await webViewSniff(content: content, parser: tempParser)
                 } catch {
-                    print("[ParserManager] WebView 嗅探失败: \(parserUrl)")
+                    AppLogger.debug("[ParserManager] WebView 嗅探失败: \(parserUrl)")
                 }
             }
         }
@@ -283,7 +283,7 @@ class ParserManager {
     
     /// SuperParse WebView 嗅探 (使用生成的 HTML)
     private func superWebViewSniff(html: String, videoUrl: String) async throws -> PlayerContent {
-        let sniffer = SnifferWebView()
+        let sniffer = await SnifferWebView()
         
         // 创建 data URL 加载 HTML
         let dataUrl = "data:text/html;charset=utf-8," + (html.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? html)
@@ -295,7 +295,7 @@ class ParserManager {
             headers: nil
         )
         
-        print("[ParserManager] SuperParse 嗅探成功: \(sniffedVideo.url)")
+        AppLogger.debug("[ParserManager] SuperParse 嗅探成功: \(sniffedVideo.url)")
         
         return sniffedVideo.toPlayerContent()
     }
@@ -306,7 +306,7 @@ class ParserManager {
     private func webViewSniff(content: PlayerContent, parser: ParseBean) async throws -> PlayerContent {
         let parseUrl = buildParseUrl(parser: parser, videoUrl: content.url)
         
-        print("[ParserManager] 开始 WebView 嗅探: \(parseUrl)")
+        AppLogger.debug("[ParserManager] 开始 WebView 嗅探: \(parseUrl)")
         
         // 解析 ext 获取 headers 和 ua
         var headers: [String: String]?
@@ -321,7 +321,7 @@ class ParserManager {
         }
         
         // 创建嗅探器
-        let sniffer = SnifferWebView()
+        let sniffer = await SnifferWebView()
         
         let sniffedVideo = try await sniffer.sniff(
             url: parseUrl,
@@ -330,7 +330,7 @@ class ParserManager {
             headers: headers
         )
         
-        print("[ParserManager] 嗅探成功: \(sniffedVideo.url)")
+        AppLogger.debug("[ParserManager] 嗅探成功: \(sniffedVideo.url)")
         
         return sniffedVideo.toPlayerContent()
     }
@@ -447,4 +447,3 @@ enum ParserError: LocalizedError {
         }
     }
 }
-
