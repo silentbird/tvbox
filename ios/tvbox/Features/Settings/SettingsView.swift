@@ -29,7 +29,14 @@ struct SettingsView: View {
                 ApiInputView(
                     title: "配置地址",
                     placeholder: "请输入配置地址",
-                    currentValue: viewModel.apiUrl
+                    currentValue: viewModel.apiUrl,
+                    recentValues: viewModel.apiHistory,
+                    onDeleteRecent: { url in
+                        viewModel.removeApiHistory(url)
+                    },
+                    onClearRecent: {
+                        viewModel.clearApiHistory()
+                    }
                 ) { url in
                     viewModel.updateApiUrl(url)
                 }
@@ -237,11 +244,33 @@ struct ApiInputView: View {
     let title: String
     let placeholder: String
     let currentValue: String
+    let recentValues: [String]
+    let onDeleteRecent: ((String) -> Void)?
+    let onClearRecent: (() -> Void)?
     let onSave: (String) -> Void
     
     @Environment(\.dismiss) private var dismiss
     @State private var inputText: String = ""
+    @State private var displayedRecentValues: [String] = []
     @State private var showScanner = false
+
+    init(
+        title: String,
+        placeholder: String,
+        currentValue: String,
+        recentValues: [String] = [],
+        onDeleteRecent: ((String) -> Void)? = nil,
+        onClearRecent: (() -> Void)? = nil,
+        onSave: @escaping (String) -> Void
+    ) {
+        self.title = title
+        self.placeholder = placeholder
+        self.currentValue = currentValue
+        self.recentValues = recentValues
+        self.onDeleteRecent = onDeleteRecent
+        self.onClearRecent = onClearRecent
+        self.onSave = onSave
+    }
     
     var body: some View {
         NavigationView {
@@ -270,12 +299,65 @@ struct ApiInputView: View {
                     .cornerRadius(10)
                 }
                 .padding(.horizontal)
+
+                if !displayedRecentValues.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text("最近使用")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            if onClearRecent != nil {
+                                Button("清空") {
+                                    onClearRecent?()
+                                    displayedRecentValues = []
+                                }
+                                .font(.caption)
+                            }
+                        }
+
+                        ForEach(displayedRecentValues, id: \.self) { url in
+                            HStack(spacing: 12) {
+                                Button {
+                                    inputText = url
+                                } label: {
+                                    HStack(spacing: 10) {
+                                        Image(systemName: "clock.arrow.circlepath")
+                                            .foregroundColor(.secondary)
+                                        Text(url)
+                                            .lineLimit(1)
+                                        Spacer()
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+
+                                if onDeleteRecent != nil {
+                                    Button {
+                                        onDeleteRecent?(url)
+                                        displayedRecentValues.removeAll { $0 == url }
+                                    } label: {
+                                        Image(systemName: "trash")
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .font(.caption)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 10)
+                            .background(Color.tvboxSystemGray6)
+                            .cornerRadius(8)
+                        }
+                    }
+                    .padding(.horizontal)
+                }
                 
                 Spacer()
                 
                 // 确认按钮
                 Button(action: {
-                    onSave(inputText)
+                    onSave(trimmedInputText)
                     dismiss()
                 }) {
                     Text("确认")
@@ -287,7 +369,7 @@ struct ApiInputView: View {
                         .cornerRadius(10)
                 }
                 .padding()
-                .disabled(inputText.isEmpty)
+                .disabled(trimmedInputText.isEmpty)
             }
             .navigationTitle(title)
             .tvboxInlineNavigationBarTitle()
@@ -298,8 +380,13 @@ struct ApiInputView: View {
             }
             .onAppear {
                 inputText = currentValue
+                displayedRecentValues = recentValues
             }
         }
+    }
+
+    private var trimmedInputText: String {
+        inputText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
@@ -311,17 +398,34 @@ struct SiteSelectorView: View {
     var body: some View {
         NavigationView {
             List {
-                ForEach(apiConfig.homeSites) { site in
+                ForEach(apiConfig.sites) { site in
+                    let unsupportedReason = site.websiteBundleUnsupportedReason
+
                     Button(action: {
+                        guard unsupportedReason == nil else {
+                            return
+                        }
                         apiConfig.setCurrentSite(site)
                         dismiss()
                     }) {
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(site.name)
-                                    .foregroundColor(.primary)
+                                HStack(spacing: 8) {
+                                    Text(site.name)
+                                        .foregroundColor(unsupportedReason == nil ? .primary : .secondary)
+
+                                    if unsupportedReason != nil {
+                                        Text("待适配")
+                                            .font(.caption2)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.orange.opacity(0.16))
+                                            .foregroundColor(.orange)
+                                            .cornerRadius(4)
+                                    }
+                                }
                                 
-                                Text(site.api)
+                                Text(unsupportedReason ?? site.api)
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                                     .lineLimit(1)
@@ -335,6 +439,7 @@ struct SiteSelectorView: View {
                             }
                         }
                     }
+                    .disabled(unsupportedReason != nil)
                 }
             }
             .navigationTitle("选择站点")
@@ -452,6 +557,7 @@ struct AboutView: View {
 class SettingsViewModel: ObservableObject {
     @Published var apiUrl: String = ""
     @Published var liveApiUrl: String = ""
+    @Published var apiHistory: [String] = []
     @Published var currentSiteName: String = "未选择"
     @Published var defaultParseName: String = "未选择"
     @Published var isRefreshing = false
@@ -480,6 +586,7 @@ class SettingsViewModel: ObservableObject {
     func loadSettings() {
         apiUrl = apiConfig.apiUrl
         liveApiUrl = apiConfig.liveApiUrl
+        apiHistory = storageManager.getApiHistory()
         currentSiteName = apiConfig.currentSite?.name ?? "未选择"
         defaultParseName = apiConfig.defaultParse?.name ?? "未选择"
         
@@ -495,14 +602,29 @@ class SettingsViewModel: ObservableObject {
     }
     
     func updateApiUrl(_ url: String) {
-        apiConfig.apiUrl = url
-        apiUrl = url
+        let trimmedUrl = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedUrl.isEmpty else { return }
+
+        apiConfig.apiUrl = trimmedUrl
+        apiUrl = trimmedUrl
+        storageManager.addApiHistory(trimmedUrl)
+        apiHistory = storageManager.getApiHistory()
         refreshConfig()
     }
     
     func updateLiveApiUrl(_ url: String) {
         apiConfig.liveApiUrl = url
         liveApiUrl = url
+    }
+
+    func removeApiHistory(_ url: String) {
+        storageManager.removeApiHistory(url)
+        apiHistory = storageManager.getApiHistory()
+    }
+
+    func clearApiHistory() {
+        storageManager.clearApiHistory()
+        apiHistory = []
     }
     
     func refreshConfig() {

@@ -49,11 +49,22 @@ struct MovieFilter: Decodable, Hashable {
         case key, name
         case values = "value"
     }
+
+    init(key: String, name: String, values: [MovieFilterValue]) {
+        self.key = key
+        self.name = name
+        self.values = values
+    }
 }
 
 struct MovieFilterValue: Decodable, Hashable {
     let n: String // 显示名称
     let v: String // 值
+
+    init(n: String, v: String) {
+        self.n = n
+        self.v = v
+    }
 }
 
 /// 影视项 - 对应 Android 的 Movie.Video
@@ -264,4 +275,3 @@ struct MovieCategoryResponse: Decodable {
         case list, filters
     }
 }
-

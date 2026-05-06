@@ -15,6 +15,8 @@ actor SpiderManager {
     /// - Parameter site: 站点配置
     /// - Returns: Spider 实例
     func getSpider(for site: SiteBean) async throws -> Spider {
+        let site = resolveLegacyWebsiteBundleSite(site)
+
         // 检查缓存
         if let spider = spiders[site.key] {
             return spider
@@ -88,11 +90,24 @@ actor SpiderManager {
             throw SpiderError.unsupported("远程类型站点暂不支持")
             
         case 8:
-            throw SpiderError.unsupported(SiteBean.websiteBundleUnsupportedMessage)
+            return WebsiteBundleSpider(site: site)
             
         default:
             throw SpiderError.unsupported("未知站点类型: \(site.type)")
         }
+    }
+
+    private func resolveLegacyWebsiteBundleSite(_ site: SiteBean) -> SiteBean {
+        guard site.key == "ios_website_bundle_source" else {
+            return site
+        }
+
+        if let adaptedSite = apiConfig.sites.first(where: \.isWebsiteBundleAdapted) {
+            AppLogger.debug("[SpiderManager] 旧 WebsiteBundle 占位站点已迁移到原生适配站点: \(adaptedSite.key)")
+            return adaptedSite
+        }
+
+        return site
     }
 }
 

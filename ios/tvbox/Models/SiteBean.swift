@@ -93,8 +93,62 @@ struct SiteBean: Decodable, Identifiable, Hashable {
     var isQuickSearchable: Bool { quickSearch == 1 }
     var isFilterable: Bool { filterable == 1 }
     var isWebsiteBundle: Bool { type == 8 }
+    var websiteBundleExtPayload: [String: Any]? {
+        guard isWebsiteBundle,
+              let ext,
+              let data = ext.data(using: .utf8),
+              let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
 
-    static let websiteBundleUnsupportedMessage = "Cat WebsiteBundle 源已识别，但它依赖 Node/Fastify 本地服务运行时，iOS 暂不能按传统 Spider 直接调用"
+        return payload
+    }
+    var websiteBundleKey: String? { websiteBundleExtPayload?["websiteBundleKey"] as? String }
+    var websiteBundleNativeAdapter: String? {
+        guard let adapter = websiteBundleExtPayload?["nativeAdapter"] as? String,
+              !adapter.isEmpty else {
+            return nil
+        }
+
+        return adapter
+    }
+    var isWebsiteBundleAdapted: Bool { websiteBundleNativeAdapter != nil }
+
+    /// WebsiteBundle 内部的 meta.type，用于识别站点类别。
+    /// 约定（参考 Cat 源）：1/2/3 为内容源（电影、动漫、短剧等），4 为配置/推送类（baseset、push）。
+    var websiteBundleType: Int? {
+        guard let payload = websiteBundleExtPayload,
+              let raw = payload["websiteBundleType"] else {
+            return nil
+        }
+        if let value = raw as? Int { return value }
+        if let value = raw as? NSNumber { return value.intValue }
+        if let value = raw as? String, let parsed = Int(value) { return parsed }
+        return nil
+    }
+
+    /// 是否是 WebsiteBundle 里的内容源条目（type != 4）。
+    /// 4 类（如 baseset 网盘配置、push 推送）不该出现在首页站点切换菜单里。
+    var isWebsiteBundleContentSource: Bool {
+        guard isWebsiteBundle else { return false }
+        guard let type = websiteBundleType else { return true }
+        return type != 4
+    }
+    var websiteBundleUnsupportedReason: String? {
+        guard isWebsiteBundle, !isWebsiteBundleAdapted else {
+            return nil
+        }
+
+        if let reason = websiteBundleExtPayload?["unsupportedReason"] as? String,
+           !reason.isEmpty {
+            return reason
+        }
+
+        let childKey = websiteBundleKey ?? key
+        return "此 WebsiteBundle 子站点尚未适配: \(name) (\(childKey))"
+    }
+
+    static let websiteBundleUnsupportedMessage = "Cat WebsiteBundle 源已识别；iOS 会优先使用已适配的原生路由，未适配的 Node/Fastify 子站点暂不能启动"
 }
 
 /// 用于处理任意 JSON 值的包装类型

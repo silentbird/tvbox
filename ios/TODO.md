@@ -7,6 +7,11 @@
 
 先做 **可构建、可运行、可验证**，不要先补弹幕、网盘、远控这些大功能。
 
+### 当前最高优先级
+
+1. [x] **P0-Blocker: 展开 Cat WebsiteBundle 完整 `/website` 子站点列表**，已补混淆 `meta` 静态还原，站点列表不再只依赖明文 `meta` 或单个 `wexDuBoKu`。
+2. [x] **P0-Blocker: 给 WebsiteBundle 子站点加可用性分层**，已适配站点可直接进入，未适配站点显示“待适配/暂不可用”状态，避免再次触发 `WebsiteBundle 未暴露 home/category/detail/search/play`。
+
 1. **把 iOS 工程跑通**
    - [x] 安装/切换完整 Xcode，确保 `xcodebuild -list -project ios/tvbox.xcodeproj` 可执行。
    - [ ] 用 Xcode 打开 `ios/tvbox.xcodeproj`，先跑 iPhone Simulator。
@@ -15,18 +20,26 @@
    - [x] 记录最小可运行环境: Xcode 26.4.1 (17E202)、iOS deployment target 17.0、Swift 5.0。
 
 2. **跑通最小用户链路**
-   - [ ] 首次启动输入配置源。
+   - [x] 首次启动输入配置源。
    - [x] 成功识别 `.js.md5` 入口对应的 Cat WebsiteBundle 源。
-   - [ ] 首页能展示站点/分类/推荐。
-   - [ ] 搜索能返回结果。
-   - [ ] 详情页能加载剧集。
-   - [ ] 点击剧集能播放。
+   - [x] Cat WebsiteBundle 接入 SpiderManager，优先尝试直接暴露 Spider 方法的 bundle。
+   - [x] P0: 支持 Node/Fastify 型 Cat WebsiteBundle 的原生路由替代层，当前先接入真实源里的 `nodejs_wexDuBoKu`。
+   - [x] 解析 Cat WebsiteBundle 时只展示已适配子站点，避免继续选中旧占位站点 `ios_website_bundle_source`。
+   - [x] 配置刷新、切换站点、Spider 创建时清理或迁移旧缓存，避免回到 JS fallback 的旧“不支持”报错。
+   - [x] P0-Blocker: 解析并展示 Cat WebsiteBundle 完整 `/website` 子站点列表，支持明文 `meta` 和混淆 `meta` 静态还原。
+   - [x] P0-Blocker: 未适配 WebsiteBundle 子站点进入前给出明确状态，不走 JS fallback 报错。
+   - [x] 首页能展示已适配 WebsiteBundle 子站点分类。
+   - [x] 搜索能通过已适配 WebsiteBundle 子站点返回结果。
+   - [x] 详情页能通过已适配 WebsiteBundle 子站点加载剧集。
+   - [x] 点击剧集能通过已适配 WebsiteBundle 子站点拿到直链播放地址。
    - [ ] 直播列表能加载并播放至少一个频道。
 
 3. **建立回归样例**
    - [ ] 准备 2-3 个公开可用配置源，仅用于本地验证。
    - [ ] 每个配置源记录支持的能力: JSON 源、JS 源、直播、解析、图片防盗链。
    - [x] 建一个 `ios/SMOKE_TEST.md`，写清楚每次发版前手动验证步骤。
+   - [x] 用真实 Cat WebsiteBundle 源验证 `wexDuBoKu` 分类、搜索、详情、播放接口。
+   - [x] 把 `wexDuBoKu` 的真实接口样例整理进 `ios/SMOKE_TEST.md`。
 
 4. **再打开 macOS**
    - [x] 先启用 Mac Catalyst，而不是立即写原生 macOS 版本。
@@ -37,6 +50,8 @@
 
 ## P0 - 工程健康
 
+- [x] **P0-Blocker: 展开 Cat WebsiteBundle 完整子站点列表**，从 bundle 内的 `/website` 注册数据或等价元数据中提取所有入口；支持明文 `meta` 和混淆 `meta` 静态还原。
+- [x] **P0-Blocker: WebsiteBundle 子站点可用性分层**，在 `SiteBean`/配置解析层记录 `nativeAdapter`、`isAdapted`、`unsupportedReason`，UI 允许展示未适配站点但不直接进入失败路径。
 - [x] 补充 `ios/README.md`，说明如何构建 iOS/macOS。
 - [x] 补充 `ios/SMOKE_TEST.md`，记录核心链路验证清单。
 - [x] 让 iOS generic build 通过。
@@ -48,10 +63,16 @@
 - [x] 检查 SwiftUI 文件是否职责过重，优先拆分 `MainView.swift` 中的首页/豆瓣/图片缓存/设置子视图。
 - [x] 明确 iOS 和 Mac 共用代码目录，例如 `Core/`、`Models/`、`Features/`，平台差异放到 `Platform/`。
 - [x] 给关键 ViewModel 标注 `@MainActor` 或统一主线程更新策略。
+- [x] Cat WebsiteBundle 不再在首页提前拦截，接入 iOS `WebsiteBundleSpider` 适配层。
+- [x] P0: 为 Node/Fastify 型 WebsiteBundle 补原生路由替代层，先支持 `wexDuBoKu` 站点。
+- [x] P0: WebsiteBundle 配置解析时优先抽取已适配子站点，旧占位站点仅作为无适配子站点时的 fallback。
+- [x] P0: 配置重新解析和站点切换时清空 Spider 缓存，并在 SpiderManager 中兜底迁移旧 WebsiteBundle 占位站点。
 
 ## P1 - 数据源兼容性
 
 ### 配置解析
+- [x] **P0-Blocker: Cat WebsiteBundle `/website` 完整列表解析**，从真实 bundle 里提取竞品可见的所有站点入口；明文/混淆 `meta` 均可解析，不再硬编码单个 `wexDuBoKu`。
+- [x] **P0-Blocker: 未适配子站点状态建模**，让站点列表能区分“已适配可用”和“已识别待适配”。
 - [x] ApiConfig - 远程 JSON 配置解析
 - [x] 站点管理 `SiteBean`
 - [x] 解析器管理 `ParseBean`
@@ -59,15 +80,22 @@
 - [x] 本地缓存机制
 - [x] 支持 `.js.md5` JS 源入口，下载同路径 `.js` 并识别 `globalThis.websiteBundle`。
 - [x] Cat WebsiteBundle 源在首页/设置站点列表可见，并显示明确的 iOS 运行层暂不支持提示。
-- [ ] 为 Cat WebsiteBundle 补 iOS 运行层或替代解析层；该源依赖 Node/Fastify 本地服务，不能按传统 Spider 直接执行。
+- [x] 为 Cat WebsiteBundle 补基础 iOS 运行适配层，可执行直接暴露 Spider 方法的 bundle。
+- [x] P0: 为 Node/Fastify 型 Cat WebsiteBundle 补原生替代解析层，先支持 `wexDuBoKu` 站点。
+- [x] `wexDuBoKu` 支持分类、筛选、搜索、详情、剧集列表和播放地址获取。
+- [x] `wexDuBoKu` 适配层支持从 `ext.nativeAdapter`、`site.key`、`site.api` 三种路径识别，降低旧缓存回退风险。
 - [ ] 记录暂不支持的 Android 兼容源格式，例如加密 JSON、`clan://`、`file://`。
 - [ ] 增加配置解析失败时的可读错误: URL 无效、网络失败、JSON 无效、字段缺失、加密失败。
 
 ### Spider
+- [x] **P0-Blocker: WebsiteBundle 子站点路由分发框架**，按 key/type 将不同子站点分派到 native adapter；没有 adapter 时返回明确 unsupported，不执行泛化 JS fallback。
 - [x] Spider 协议定义
 - [x] JsonSpider
 - [x] JsSpider - JavaScriptCore
 - [x] QuickJSSpider fallback
+- [x] WebsiteBundleSpider fallback
+- [x] WebsiteBundleNativeSpider - `wexDuBoKu`
+- [x] WebsiteBundleNativeSpider - `wexYueYue`、`animemodu`、`dongli`、`duanjuweiguan`、`hanxiaoquan`、`bookWuWei`、`bili`（mp4 flag）
 - [ ] 对齐 Android `JarLoader`/`JsLoader` 行为，列出 iOS 无法支持的字节码/二进制格式。
 - [ ] 支持 XML 类型站点 `type = 0`。
 - [ ] 支持远程类型站点 `type = 4`。
@@ -78,6 +106,7 @@
 - [x] 分类视频列表
 - [x] 搜索
 - [x] 多站点快速搜索基础能力
+- [x] `wexDuBoKu` 分类筛选参数映射。
 - [ ] 分类筛选 UI 和筛选参数持久化。
 - [ ] 搜索源选择。
 - [ ] 搜索结果合并去重和错误隔离。
@@ -133,7 +162,7 @@
 - [x] CollectView
 - [x] SettingsView
 - [x] StorageManager 基础本地存储
-- [ ] API 历史记录。
+- [x] API 历史记录。
 - [ ] 配置导入/导出。
 - [ ] iCloud 同步收藏/历史，可后置。
 - [ ] 清理缓存。

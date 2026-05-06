@@ -3,6 +3,7 @@ import SwiftUI
 struct ConfigSetupView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var apiUrl: String = ""
+    @State private var recentApiUrls: [String] = []
     @State private var isLoading = false
     @State private var error: String?
 
@@ -92,6 +93,36 @@ struct ConfigSetupView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal)
 
+            if !recentApiUrls.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("最近使用")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    ForEach(recentApiUrls.prefix(3), id: \.self) { url in
+                        Button {
+                            apiUrl = url
+                        } label: {
+                            HStack {
+                                Image(systemName: "clock.arrow.circlepath")
+                                    .foregroundColor(.secondary)
+                                Text(url)
+                                    .font(.caption)
+                                    .lineLimit(1)
+                                Spacer()
+                            }
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 10)
+                            .background(Color.tvboxSystemGray6)
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal)
+            }
+
             Spacer(minLength: 16)
 
             Button(action: confirmConfig) {
@@ -106,25 +137,32 @@ struct ConfigSetupView: View {
                 .fontWeight(.semibold)
                 .frame(maxWidth: .infinity)
                 .padding()
-                .background(apiUrl.isEmpty ? Color.gray : Color.blue)
+                .background(trimmedApiUrl.isEmpty ? Color.gray : Color.blue)
                 .foregroundColor(.white)
                 .cornerRadius(12)
             }
             .keyboardShortcut(.defaultAction)
-            .disabled(apiUrl.isEmpty || isLoading)
+            .disabled(trimmedApiUrl.isEmpty || isLoading)
             .padding()
         }
+        .onAppear {
+            recentApiUrls = StorageManager.shared.getApiHistory()
+        }
+    }
+
+    private var trimmedApiUrl: String {
+        apiUrl.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func confirmConfig() {
         AppLogger.debug("[ConfigSetupView] confirmConfig 开始")
 
-        guard !apiUrl.isEmpty else {
+        guard !trimmedApiUrl.isEmpty else {
             AppLogger.debug("[ConfigSetupView] apiUrl 为空，返回")
             return
         }
 
-        let urlToSave = apiUrl
+        let urlToSave = trimmedApiUrl
         let completion = onComplete
         isLoading = true
 
@@ -133,6 +171,7 @@ struct ConfigSetupView: View {
 
             await MainActor.run {
                 ApiConfig.shared.apiUrl = urlToSave
+                StorageManager.shared.addApiHistory(urlToSave)
             }
             AppLogger.debug("[ConfigSetupView] 2. URL 已保存: \(urlToSave)")
 

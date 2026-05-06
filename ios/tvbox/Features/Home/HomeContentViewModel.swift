@@ -21,16 +21,9 @@ class HomeContentViewModel: ObservableObject {
         doubanCategories = []
         error = nil
 
-        guard let currentSite = apiConfig.currentSite else {
+        guard apiConfig.currentSite != nil else {
             AppLogger.debug("[HomeContentViewModel] 没有当前站点，加载豆瓣分类")
             loadDoubanCategories()
-            return
-        }
-
-        if currentSite.isWebsiteBundle {
-            AppLogger.debug("[HomeContentViewModel] Cat WebsiteBundle 源已识别，等待 iOS 运行层支持")
-            error = SpiderError.unsupported(SiteBean.websiteBundleUnsupportedMessage)
-            isLoading = false
             return
         }
 

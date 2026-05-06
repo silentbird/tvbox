@@ -9,6 +9,7 @@ class StorageManager {
     
     // MARK: - Keys
     private enum Keys {
+        static let apiHistory = "api_history"
         static let searchHistory = "search_history"
         static let vodHistory = "vod_history"
         static let vodCollect = "vod_collect"
@@ -20,6 +21,41 @@ class StorageManager {
     // MARK: - Documents Directory
     private var documentsDirectory: URL {
         fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    }
+
+    // MARK: - API History
+
+    func getApiHistory() -> [String] {
+        return userDefaults.stringArray(forKey: Keys.apiHistory) ?? []
+    }
+
+    func addApiHistory(_ url: String) {
+        let trimmedUrl = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedUrl.isEmpty else { return }
+
+        var history = getApiHistory()
+        history.removeAll { $0 == trimmedUrl }
+        history.insert(trimmedUrl, at: 0)
+
+        if history.count > 20 {
+            history = Array(history.prefix(20))
+        }
+
+        saveApiHistory(history)
+    }
+
+    func removeApiHistory(_ url: String) {
+        var history = getApiHistory()
+        history.removeAll { $0 == url }
+        saveApiHistory(history)
+    }
+
+    func clearApiHistory() {
+        userDefaults.removeObject(forKey: Keys.apiHistory)
+    }
+
+    private func saveApiHistory(_ history: [String]) {
+        userDefaults.set(history, forKey: Keys.apiHistory)
     }
     
     // MARK: - Search History
@@ -254,4 +290,3 @@ class StorageManager {
         }
     }
 }
-
