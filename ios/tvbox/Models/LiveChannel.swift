@@ -34,12 +34,13 @@ struct LiveChannelGroup: Decodable, Identifiable {
 /// 直播频道项 - 对应 Android 的 LiveChannelItem
 struct LiveChannelItem: Decodable, Identifiable {
     var id: String { channelName }
-    
+
     var channelIndex: Int = 0
     var channelNum: Int = 0
     var channelName: String = ""
     var channelUrls: [String] = []
     var channelSourceNames: [String] = []
+    var headers: [String: String] = [:]
     
     enum CodingKeys: String, CodingKey {
         case name, urls
@@ -112,4 +113,3 @@ struct LiveConfig: Decodable {
         case name, type, url, api, jar, epg, logo, ua, playerType, header, ext
     }
 }
-

@@ -244,7 +244,7 @@ struct LivePlayerView: View {
                                 ForEach(Array(channel.channelSourceNames.enumerated()), id: \.offset) { index, name in
                                     Button(action: {
                                         currentSourceIndex = index
-                                        viewModel.loadChannel(url: channel.channelUrls[index])
+                                        viewModel.loadChannel(url: channel.channelUrls[index], headers: channel.headers)
                                     }) {
                                         HStack {
                                             Text(name)
@@ -294,10 +294,15 @@ struct LivePlayerView: View {
                     if channel.channelUrls.count > 1 && currentSourceIndex < channel.channelUrls.count - 1 {
                         Button("切换下一个源") {
                             currentSourceIndex += 1
-                            viewModel.loadChannel(url: channel.channelUrls[currentSourceIndex])
+                            viewModel.loadChannel(url: channel.channelUrls[currentSourceIndex], headers: channel.headers)
                         }
                         .foregroundColor(.blue)
                     }
+
+                    Button("重试") {
+                        viewModel.loadChannel(url: channel.channelUrls[currentSourceIndex], headers: channel.headers)
+                    }
+                    .foregroundColor(.white)
                 }
                 .padding()
             }
@@ -305,7 +310,7 @@ struct LivePlayerView: View {
         .tvboxStatusBar(hidden: true)
         .onAppear {
             if !channel.channelUrls.isEmpty {
-                viewModel.loadChannel(url: channel.channelUrls[currentSourceIndex])
+                viewModel.loadChannel(url: channel.channelUrls[currentSourceIndex], headers: channel.headers)
             }
         }
         .onDisappear {
@@ -463,24 +468,56 @@ class LivePlayerViewModel: ObservableObject {
     @Published var player: AVPlayer?
     @Published var isLoading = false
     @Published var error: Error?
+
+    private var statusObserver: NSKeyValueObservation?
+    private var failureObserver: NSObjectProtocol?
     
-    func loadChannel(url: String) {
+    func loadChannel(url: String, headers: [String: String] = [:]) {
         isLoading = true
         error = nil
-        
-        guard let videoUrl = URL(string: url) else {
+
+        guard let videoUrl = URL(string: url.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             error = NSError(domain: "LivePlayer", code: -1, userInfo: [NSLocalizedDescriptionKey: "无效的播放地址"])
             isLoading = false
             return
         }
         
         cleanup()
-        
-        let playerItem = AVPlayerItem(url: videoUrl)
+
+        let asset: AVURLAsset
+        if headers.isEmpty {
+            asset = AVURLAsset(url: videoUrl)
+        } else {
+            asset = AVURLAsset(
+                url: videoUrl,
+                options: ["AVURLAssetHTTPHeaderFieldsKey": headers]
+            )
+        }
+
+        let playerItem = AVPlayerItem(asset: asset)
         player = AVPlayer(playerItem: playerItem)
+
+        statusObserver = playerItem.observe(\.status) { [weak self] item, _ in
+            Task { @MainActor in
+                switch item.status {
+                case .readyToPlay:
+                    self?.isLoading = false
+                    self?.player?.play()
+                case .failed:
+                    self?.isLoading = false
+                    self?.error = item.error ?? NSError(
+                        domain: "LivePlayer",
+                        code: -2,
+                        userInfo: [NSLocalizedDescriptionKey: "直播源播放失败"]
+                    )
+                default:
+                    break
+                }
+            }
+        }
         
         // 监听状态
-        NotificationCenter.default.addObserver(
+        failureObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemFailedToPlayToEndTime,
             object: playerItem,
             queue: .main
@@ -488,16 +525,22 @@ class LivePlayerViewModel: ObservableObject {
             if let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error {
                 Task { @MainActor in
                     self?.error = error
+                    self?.isLoading = false
                 }
             }
         }
         
         player?.play()
-        isLoading = false
     }
     
     func cleanup() {
         player?.pause()
+        statusObserver?.invalidate()
+        statusObserver = nil
+        if let failureObserver {
+            NotificationCenter.default.removeObserver(failureObserver)
+            self.failureObserver = nil
+        }
         player = nil
     }
 }

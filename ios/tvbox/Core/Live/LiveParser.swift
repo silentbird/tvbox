@@ -91,7 +91,7 @@ class LiveParserManager {
         guard let urlString = config.url ?? config.api else {
             throw LiveParserError.noUrl
         }
-        
+
         let type: LiveSourceType?
         if let configType = config.type {
             type = LiveSourceType(rawValue: configType)
@@ -99,7 +99,31 @@ class LiveParserManager {
             type = nil
         }
         
-        return try await loadLiveSource(from: urlString, type: type)
+        let groups = try await loadLiveSource(from: urlString, type: type)
+        let headers = playbackHeaders(from: config)
+        guard !headers.isEmpty else { return groups }
+
+        return groups.map { group in
+            var mutableGroup = group
+            mutableGroup.channels = group.channels.map { channel in
+                var mutableChannel = channel
+                mutableChannel.headers.merge(headers) { current, _ in current }
+                return mutableChannel
+            }
+            return mutableGroup
+        }
+    }
+
+    private func playbackHeaders(from config: LiveConfig) -> [String: String] {
+        var headers = config.header ?? [:]
+
+        if let ua = config.ua?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !ua.isEmpty,
+           headers.keys.first(where: { $0.caseInsensitiveCompare("User-Agent") == .orderedSame }) == nil {
+            headers["User-Agent"] = ua
+        }
+
+        return headers
     }
 }
 
@@ -126,4 +150,3 @@ enum LiveParserError: LocalizedError {
         }
     }
 }
-
