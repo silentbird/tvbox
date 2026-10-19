@@ -1,25 +1,30 @@
 package com.github.tvbox.osc.server;
 
 import static com.github.tvbox.osc.util.RegexUtils.getPattern;
+
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.net.wifi.WifiManager;
 import android.os.Environment;
+import android.text.TextUtils;
 import android.util.Base64;
 
 import com.github.tvbox.osc.R;
-import com.github.tvbox.osc.base.App;
 import com.github.tvbox.osc.api.ApiConfig;
+import com.github.tvbox.osc.base.App;
+import com.github.tvbox.osc.bean.VodInfo;
+import com.github.tvbox.osc.event.RefreshEvent;
 import com.github.tvbox.osc.event.ServerEvent;
+import com.github.tvbox.osc.receiver.PushReceiver;
 import com.github.tvbox.osc.util.FileUtils;
+import com.github.tvbox.osc.util.LOG;
 import com.github.tvbox.osc.util.OkGoHelper;
-import com.google.gson.Gson;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
 import com.github.tvbox.osc.util.Proxy;
+import com.google.gson.JsonArray;
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+
 import org.greenrobot.eventbus.EventBus;
-import org.json.JSONException;
-import org.json.JSONObject;
 
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayInputStream;
@@ -28,10 +33,13 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -58,13 +66,9 @@ public class RemoteServer extends NanoHTTPD {
     public static int serverPort = 9978;
     private boolean isStarted = false;
     private DataReceiver mDataReceiver;
-    private ArrayList < RequestProcess > getRequestList = new ArrayList < > ();
-    private ArrayList < RequestProcess > postRequestList = new ArrayList < > ();
-    private static final String PATTERN_ETH_STR = "^eth\\d+$";
-    private static final Pattern ETH_PATTERN = Pattern.compile(PATTERN_ETH_STR);
     public static String m3u8Content;
-    public static String vodName;
-    public static String artist;
+    private ArrayList<RequestProcess> getRequestList = new ArrayList<>();
+    private ArrayList<RequestProcess> postRequestList = new ArrayList<>();
 
     public RemoteServer(int port, Context context) {
         super(port);
@@ -81,10 +85,12 @@ public class RemoteServer extends NanoHTTPD {
         getRequestList.add(new RawRequestProcess(this.mContext, "/jquery.js", R.raw.jquery, "application/x-javascript"));
         getRequestList.add(new RawRequestProcess(this.mContext, "/script.js", R.raw.script, "application/x-javascript"));
         getRequestList.add(new RawRequestProcess(this.mContext, "/favicon.ico", R.drawable.app_icon, "image/x-icon"));
+        getRequestList.add(new CacheRequestProcess());
     }
 
     private void addPostRequestProcess() {
         postRequestList.add(new InputRequestProcess(this));
+        postRequestList.add(new CacheRequestProcess());
     }
 
     @Override
@@ -102,6 +108,10 @@ public class RemoteServer extends NanoHTTPD {
 
     private Response getProxy(Object[] rs){
         try {
+            if (rs == null || rs.length < 3) {
+                LOG.e("echo-proxy error: empty proxy result");
+                return NanoHTTPD.newFixedLengthResponse(Response.Status.INTERNAL_ERROR, NanoHTTPD.MIME_PLAINTEXT, "500");
+            }
             if (rs[0] instanceof NanoHTTPD.Response) return (NanoHTTPD.Response) rs[0];
             int code = (int) rs[0];
             String mime = (String) rs[1];
@@ -123,9 +133,11 @@ public class RemoteServer extends NanoHTTPD {
             }
             return response;
         } catch (Throwable th) {
+            LOG.e("echo-proxy error: " + th.getMessage());
             return NanoHTTPD.newFixedLengthResponse(Response.Status.INTERNAL_ERROR, NanoHTTPD.MIME_PLAINTEXT, "500");
         }
     }
+
     @Override
     public Response serve(IHTTPSession session) {
         EventBus.getDefault().post(new ServerEvent(ServerEvent.SERVER_CONNECTION));
@@ -135,34 +147,15 @@ public class RemoteServer extends NanoHTTPD {
                 fileName = fileName.substring(0, fileName.indexOf('?'));
             }
             if (session.getMethod() == Method.GET) {
-                for (RequestProcess process: getRequestList) {
+                if (isProxyRequest(fileName, session.getParms())) {
+                    return handleProxy(session);
+                }
+                for (RequestProcess process : getRequestList) {
                     if (process.isRequest(session, fileName)) {
                         return process.doResponse(session, fileName, session.getParms(), null);
                     }
                 }
-                if (fileName.equals("/media")) {
-                    JSONObject jsonObject = new JSONObject();
-                    try {
-                        jsonObject.put("title", vodName);
-                        jsonObject.put("artist", artist);
-                    } catch (JSONException e) {
-                        e.printStackTrace();
-                    }
-                    return NanoHTTPD.newFixedLengthResponse(NanoHTTPD.Response.Status.OK, NanoHTTPD.MIME_PLAINTEXT, jsonObject.toString());
-                }
-                if (fileName.equals("/proxy")) {
-                    Map < String, String > params = session.getParms();
-                    params.putAll(session.getHeaders());
-                    params.put("request-headers", new Gson().toJson(session.getHeaders()));
-                    if (params.containsKey("do")) {
-                        Object[] rs = ApiConfig.get().proxyLocal(params);
-                        return getProxy(rs);
-                    }
-                    if (params.containsKey("go")) {
-                        Object[] rs = Proxy.proxy(params);
-                        return getProxy(rs);
-                    }
-                } else if (fileName.startsWith("/file/")) {
+                if (fileName.startsWith("/file/")) {
                     try {
                         String f = fileName.substring(6);
                         String root = Environment.getExternalStorageDirectory().getAbsolutePath();
@@ -189,19 +182,42 @@ public class RemoteServer extends NanoHTTPD {
                         rs = new byte[0];
                     }
                     return NanoHTTPD.newFixedLengthResponse(NanoHTTPD.Response.Status.OK, "application/dns-message", new ByteArrayInputStream(rs), rs.length);
-                } else if (fileName.equals("/m3u8")) {
-                    return NanoHTTPD.newFixedLengthResponse(NanoHTTPD.Response.Status.OK, NanoHTTPD.MIME_PLAINTEXT, m3u8Content);
-                } else if (fileName.startsWith("/dash/")) {
+                } else if (fileName.startsWith("/push/")) {
+                    String url = fileName.substring(6);
+                    if (url.startsWith("b64:")) {
+                        try {
+                            url = new String(Base64.decode(url.substring(4), Base64.DEFAULT | Base64.URL_SAFE | Base64.NO_WRAP), "UTF-8");
+                        } catch (UnsupportedEncodingException e) {
+                            e.printStackTrace();
+                        }
+                    } else {
+                        url = URLDecoder.decode(url);
+                    }
+                    PushReceiver.send(mContext, url);
+                    return NanoHTTPD.newFixedLengthResponse(NanoHTTPD.Response.Status.OK, NanoHTTPD.MIME_PLAINTEXT, "ok");    
+                } else if (fileName.equals("/action")) {
+                    return handleAction(session.getParms());
+                } else if (fileName.equals("/media")) {
+                    return handleMedia();
+                }  else if (fileName.startsWith("/proxyM3u8")) {
+//                    com.github.tvbox.osc.util.LOG.i("echo-proxyM3u8 length:" + (m3u8Content == null ? 0 : m3u8Content.length()));
+                    return NanoHTTPD.newFixedLengthResponse(Response.Status.OK, "application/vnd.apple.mpegurl", m3u8Content == null ? "" : m3u8Content);
+                }
+                 else if (fileName.startsWith("/dash/")) {
                     String dashData = App.getInstance().getDashData();
                     try {
                         String data = new String(Base64.decode(dashData, Base64.DEFAULT | Base64.NO_WRAP), "UTF-8");
-                        return NanoHTTPD.newFixedLengthResponse(NanoHTTPD.Response.Status.OK, "application/dash+xml", data);
+                        return NanoHTTPD.newFixedLengthResponse(
+                                Response.Status.OK,
+                                "application/dash+xml",
+                                data
+                        );
                     } catch (Throwable th) {
                         return NanoHTTPD.newFixedLengthResponse(NanoHTTPD.Response.Status.INTERNAL_ERROR, NanoHTTPD.MIME_PLAINTEXT, dashData);
                     }
                 }
             } else if (session.getMethod() == Method.POST) {
-                Map < String, String > files = new HashMap < String, String > ();
+                Map<String, String> files = new HashMap<String, String>();
                 try {
                     if (session.getHeaders().containsKey("content-type")) {
                         String hd = session.getHeaders().get("content-type");
@@ -222,23 +238,24 @@ public class RemoteServer extends NanoHTTPD {
                 } catch (NanoHTTPD.ResponseException rex) {
                     return createPlainTextResponse(rex.getStatus(), rex.getMessage());
                 }
-                for (RequestProcess process: postRequestList) {
+                for (RequestProcess process : postRequestList) {
                     if (process.isRequest(session, fileName)) {
                         return process.doResponse(session, fileName, session.getParms(), files);
                     }
                 }
                 try {
-                    Map < String, String > params = session.getParms();
+                    Map<String, String> params = session.getParms();
                     if (fileName.equals("/upload")) {
                         String path = params.get("path");
-                        for (String k: files.keySet()) {
+                        for (String k : files.keySet()) {
                             if (k.startsWith("files-")) {
                                 String fn = params.get(k);
                                 String tmpFile = files.get(k);
                                 File tmp = new File(tmpFile);
                                 String root = Environment.getExternalStorageDirectory().getAbsolutePath();
                                 File file = new File(root + "/" + path + "/" + fn);
-                                if (file.exists()) file.delete();
+                                if (file.exists())
+                                    file.delete();
                                 if (tmp.exists()) {
                                     if (fn.toLowerCase().endsWith(".zip")) {
                                         unzip(tmp, root + "/" + path);
@@ -246,7 +263,8 @@ public class RemoteServer extends NanoHTTPD {
                                         FileUtils.copyFile(tmp, file);
                                     }
                                 }
-                                if (tmp.exists()) tmp.delete();
+                                if (tmp.exists())
+                                    tmp.delete();
                             }
                         }
                         return NanoHTTPD.newFixedLengthResponse(NanoHTTPD.Response.Status.OK, NanoHTTPD.MIME_PLAINTEXT, "OK");
@@ -258,7 +276,8 @@ public class RemoteServer extends NanoHTTPD {
                         if (!file.exists()) {
                             file.mkdirs();
                             File flag = new File(root + "/" + path + "/" + name + "/.tvbox_folder");
-                            if (!flag.exists()) flag.createNewFile();
+                            if (!flag.exists())
+                                flag.createNewFile();
                         }
                         return NanoHTTPD.newFixedLengthResponse(NanoHTTPD.Response.Status.OK, NanoHTTPD.MIME_PLAINTEXT, "OK");
                     } else if (fileName.equals("/delFolder")) {
@@ -285,6 +304,116 @@ public class RemoteServer extends NanoHTTPD {
         }
         //default page: index.html
         return getRequestList.get(0).doResponse(session, "", null, null);
+    }
+
+    private boolean isProxyRequest(String fileName, Map<String, String> params) {
+        if (params == null) return false;
+        if (!params.containsKey("do") && !params.containsKey("go")) return false;
+        return fileName.equals("/proxy") || fileName.equals("/");
+    }
+
+    private Response handleProxy(IHTTPSession session) {
+        Map<String, String> params = session.getParms();
+        params.putAll(session.getHeaders());
+        if (params.containsKey("do")) {
+            boolean isDanmuProxy = "danmu".equals(params.get("do"));
+            if (isDanmuProxy) normalizeDanmuParams(params);
+            if (isDanmuProxy) LOG.i("echo-proxy-danmu params: " + params.toString());
+            Object[] rs = ApiConfig.get().proxyLocal(params);
+            return getProxy(rs);
+        }
+        if (params.containsKey("go")) {
+            Object[] rs = Proxy.proxy(params);
+            return getProxy(rs);
+        }
+        return getProxy(null);
+    }
+
+    private Response handleAction(Map<String, String> params) {
+        if (params == null) return createPlainTextResponse(Response.Status.OK, "ok");
+        String action = params.get("do");
+        if ("refresh".equals(action)) {
+            handleRefreshAction(params);
+        }
+        return createPlainTextResponse(Response.Status.OK, "ok");
+    }
+
+    private void handleRefreshAction(Map<String, String> params) {
+        String type = params.get("type");
+        if ("danmaku".equals(type)) {
+            String path = params.get("path");
+            EventBus.getDefault().post(new RefreshEvent(RefreshEvent.TYPE_DANMU_REFRESH, path == null ? "" : path));
+        }
+    }
+
+    private Response handleMedia() {
+        try {
+            android.app.Activity activity = App.getInstance().getCurrentActivity();
+            if (activity == null) return createJSONResponse(Response.Status.OK, "{}");
+            final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+            final com.google.gson.JsonObject[] result = new com.google.gson.JsonObject[1];
+            result[0] = new com.google.gson.JsonObject();
+            final android.app.Activity act = activity;
+            new android.os.Handler(android.os.Looper.getMainLooper()).post(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        if (act instanceof com.github.tvbox.osc.ui.activity.DetailActivity) {
+                            com.github.tvbox.osc.ui.activity.DetailActivity detail = (com.github.tvbox.osc.ui.activity.DetailActivity) act;
+                            com.github.tvbox.osc.ui.fragment.PlayFragment playFragment = detail.getPlayFragment();
+                            if (playFragment != null) result[0] = playFragment.getMediaInfo();
+                        }
+                    } catch (Throwable th) {
+                        LOG.e("echo-media handleMedia error: " + th.getMessage());
+                    } finally {
+                        latch.countDown();
+                    }
+                }
+            });
+            latch.await(2, java.util.concurrent.TimeUnit.SECONDS);
+            return createJSONResponse(Response.Status.OK, result[0].toString());
+        } catch (Throwable th) {
+            LOG.e("echo-media error: " + th.getMessage());
+            return createJSONResponse(Response.Status.OK, "{}");
+        }
+    }
+
+    private void normalizeDanmuParams(Map<String, String> params) {
+        try {
+            VodInfo vodInfo = App.getInstance().getVodInfo();
+            if (vodInfo == null) return;
+            if (!TextUtils.isEmpty(vodInfo.name)) params.put("vodName", vodInfo.name);
+            if (!isNumeric(params.get("vodIndex"))) {
+                String episode = getCurrentEpisodeIndex(vodInfo);
+                if (!TextUtils.isEmpty(episode)) params.put("vodIndex", episode);
+            }
+        } catch (Throwable th) {
+            LOG.e("echo-proxy-danmu normalize error: " + th.getMessage());
+        }
+    }
+
+    private String getCurrentEpisodeIndex(VodInfo vodInfo) {
+        if (vodInfo.seriesMap != null && !TextUtils.isEmpty(vodInfo.playFlag)) {
+            java.util.List<VodInfo.VodSeries> series = vodInfo.seriesMap.get(vodInfo.playFlag);
+            if (series != null && vodInfo.playIndex >= 0 && vodInfo.playIndex < series.size()) {
+                VodInfo.VodSeries current = series.get(vodInfo.playIndex);
+                if (current != null && !TextUtils.isEmpty(current.name)) {
+                    String number = extractNumber(current.name);
+                    return TextUtils.isEmpty(number) ? current.name : number;
+                }
+            }
+        }
+        return String.valueOf(Math.max(0, vodInfo.playIndex) + 1);
+    }
+
+    private boolean isNumeric(String text) {
+        return !TextUtils.isEmpty(text) && text.matches("\\d+");
+    }
+
+    private String extractNumber(String text) {
+        if (TextUtils.isEmpty(text)) return "";
+        Matcher matcher = getPattern("\\d+").matcher(text);
+        return matcher.find() ? matcher.group() : "";
     }
 
     public void setDataReceiver(DataReceiver receiver) {
@@ -322,12 +451,12 @@ public class RemoteServer extends NanoHTTPD {
         int ipAddress = wifiManager.getConnectionInfo().getIpAddress();
         if (ipAddress == 0) {
             try {
-                Enumeration < NetworkInterface > enumerationNi = NetworkInterface.getNetworkInterfaces();
+                Enumeration<NetworkInterface> enumerationNi = NetworkInterface.getNetworkInterfaces();
                 while (enumerationNi.hasMoreElements()) {
                     NetworkInterface networkInterface = enumerationNi.nextElement();
                     String interfaceName = networkInterface.getDisplayName();
-                    if (ETH_PATTERN.matcher(interfaceName).matches() || interfaceName.equals("wlan0")) {
-                        Enumeration < InetAddress > enumIpAddr = networkInterface.getInetAddresses();
+                    if (interfaceName.equals("eth0") || interfaceName.equals("wlan0")) {
+                        Enumeration<InetAddress> enumIpAddr = networkInterface.getInetAddresses();
                         while (enumIpAddr.hasMoreElements()) {
                             InetAddress inetAddress = enumIpAddr.nextElement();
                             if (!inetAddress.isLoopbackAddress() && inetAddress instanceof Inet4Address) {
@@ -376,7 +505,7 @@ public class RemoteServer extends NanoHTTPD {
             }
         });
         JsonArray result = new JsonArray();
-        for (File f: list) {
+        for (File f : list) {
             if (f.getName().startsWith(".")) {
                 if (f.getName().equals(".tvbox_folder")) {
                     info.addProperty("del", 1);
@@ -400,7 +529,7 @@ public class RemoteServer extends NanoHTTPD {
             destDir.mkdirs();
         }
         ZipFile zip = new ZipFile(zipFilePath);
-        Enumeration < ZipEntry > iter = (Enumeration < ZipEntry > ) zip.entries();
+        Enumeration<ZipEntry> iter = (Enumeration<ZipEntry>) zip.entries();
         while (iter.hasMoreElements()) {
             ZipEntry entry = iter.nextElement();
             InputStream is = zip.getInputStream(entry);
@@ -409,16 +538,19 @@ public class RemoteServer extends NanoHTTPD {
                 extractFile(is, filePath);
             } else {
                 File dir = new File(filePath);
-                if (!dir.exists()) dir.mkdirs();
+                if (!dir.exists())
+                    dir.mkdirs();
                 File flag = new File(dir + "/.tvbox_folder");
-                if (!flag.exists()) flag.createNewFile();
+                if (!flag.exists())
+                    flag.createNewFile();
             }
         }
     }
 
     void extractFile(InputStream inputStream, String destFilePath) throws Throwable {
         File dst = new File(destFilePath);
-        if (dst.exists()) dst.delete();
+        if (dst.exists())
+            dst.delete();
         BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(destFilePath));
         byte[] bytesIn = new byte[2048];
         int len = inputStream.read(bytesIn);

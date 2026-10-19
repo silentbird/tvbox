@@ -1,10 +1,16 @@
 package com.github.tvbox.osc.util;
 
-import static com.bumptech.glide.load.resource.bitmap.VideoDecoder.FRAME_OPTION;
 import android.graphics.Bitmap;
-import android.media.MediaMetadataRetriever;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.RectF;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
 import android.text.TextUtils;
 import android.widget.ImageView;
+
 import androidx.annotation.Nullable;
 
 import com.bumptech.glide.Glide;
@@ -15,14 +21,13 @@ import com.bumptech.glide.load.engine.GlideException;
 import com.bumptech.glide.load.model.GlideUrl;
 import com.bumptech.glide.load.model.LazyHeaders;
 import com.bumptech.glide.load.resource.bitmap.CenterCrop;
+import com.bumptech.glide.load.resource.bitmap.FitCenter;
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners;
 import com.bumptech.glide.request.RequestListener;
 import com.bumptech.glide.request.RequestOptions;
 import com.bumptech.glide.request.target.Target;
-import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.api.ApiConfig;
 import com.github.tvbox.osc.base.App;
-import com.google.common.net.HttpHeaders;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 
@@ -30,17 +35,18 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.UnsupportedEncodingException;
-import java.net.MalformedURLException;
-import java.net.URL;
 import java.net.URLDecoder;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Random;
+
+import me.jessyan.autosize.utils.AutoSizeUtils;
 
 public class ImgUtil {
+    private static final Map<String, Drawable> drawableCache = new HashMap<>();
     public static int defaultWidth = 244;
     public static int defaultHeight = 320;
 
-    /**
-     * style 数据结构：ratio 指定宽高比（宽 / 高），type 表示风格（例如 rect、list）
-     */
     public static class Style {
         public float ratio;
         public String type;
@@ -51,28 +57,29 @@ public class ImgUtil {
         }
     }
 
+    public static boolean isBase64Image(String picUrl) {
+        return picUrl != null && picUrl.startsWith("data:image");
+    }
+
     public static Style initStyle() {
         String bStyle = ApiConfig.get().getHomeSourceBean().getStyle();
-        if(!bStyle.isEmpty()){
+        if (!bStyle.isEmpty()) {
             try {
                 JSONObject jsonObject = new JSONObject(bStyle);
-                float ratio = (float) jsonObject.getDouble("ratio");
-                String type = jsonObject.getString("type");
-                return new Style(ratio, type);
-            }catch (JSONException e){
-
+                return new Style((float) jsonObject.getDouble("ratio"), jsonObject.getString("type"));
+            } catch (JSONException ignored) {
             }
         }
         return null;
     }
 
-    public static int spanCountByStyle(Style style,int defaultCount){
-        int spanCount=defaultCount;
+    public static int spanCountByStyle(Style style, int defaultCount) {
+        int spanCount = defaultCount;
         if ("rect".equals(style.type)) {
             if (style.ratio >= 1.7) {
-                spanCount = 3; // 横图
+                spanCount = 3;
             } else if (style.ratio >= 1.3) {
-                spanCount = 4; // 4:3
+                spanCount = 4;
             }
         } else if ("list".equals(style.type)) {
             spanCount = 1;
@@ -80,190 +87,247 @@ public class ImgUtil {
         return spanCount;
     }
 
-    public static int getStyleDefaultWidth(Style style){
+    public static int getStyleDefaultWidth(Style style) {
         int styleDefaultWidth = 280;
-        if(style.ratio<1)styleDefaultWidth=214;
-        if(style.ratio>1.7)styleDefaultWidth=380;
+        if (style.ratio < 1) styleDefaultWidth = 214;
+        if (style.ratio > 1.7) styleDefaultWidth = 380;
         return styleDefaultWidth;
     }
-//    public static void load(String url, ImageView view) {
-//        load(url, view, 10);
-//    }
-//
-//    public static void load(String url, ImageView view, ImageView.ScaleType scaleType) {
-//        load(url, view, 10, scaleType);
-//    }
-//
-//    public static void load(String url, ImageView view, int roundingRadius, ImageView.ScaleType scaleType) {
-//        view.setScaleType(ImageView.ScaleType.FIT_CENTER);
-//        if (TextUtils.isEmpty(url)) {
-//            view.setImageResource(R.drawable.img_loading_placeholder);
-//        } else {
-//            if (roundingRadius == 0) roundingRadius = 1;
-//            RequestOptions requestOptions = new RequestOptions()
-//                .format(DecodeFormat.PREFER_RGB_565)
-//                .diskCacheStrategy(getDiskCacheStrategy(4))
-//                .dontAnimate()
-//                .transform(
-//            new RoundedCorners(roundingRadius));
-//            Glide.with(App.getInstance())
-//                .asBitmap()
-//                .load(getUrl(url))
-//                .error(R.drawable.img_loading_placeholder)
-//                .placeholder(R.drawable.img_loading_placeholder)
-//                .listener(getListener(view, scaleType))
-//                .apply(requestOptions)
-//                .into(view);
-//        }
-//    }
+
+    public static Bitmap decodeBase64ToBitmap(String base64Str) {
+        String base64Data = base64Str.substring(base64Str.indexOf(",") + 1);
+        byte[] decodedBytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT);
+        return BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.length);
+    }
+
     public static void load(String url, ImageView view, int roundingRadius) {
-        load(url, view, roundingRadius,0,0);
+        load(url, view, roundingRadius, 0, 0, null);
     }
 
     public static void load(String url, ImageView view, int roundingRadius, int newWidth, int newHeight) {
-        view.setScaleType(ImageView.ScaleType.CENTER);
-        if (TextUtils.isEmpty(url)) {
-            view.setImageResource(R.drawable.img_loading_placeholder);
-        } else {
-            if (roundingRadius == 0) roundingRadius = 1;
-            RequestOptions requestOptions = new RequestOptions()
+        load(url, view, roundingRadius, newWidth, newHeight, null);
+    }
+
+    public static void load(String url, ImageView view, int roundingRadius, int newWidth, int newHeight, String label, ImageView.ScaleType scaleType) {
+        view.setScaleType(scaleType);
+        if (roundingRadius <= 0) roundingRadius = 1;
+        Drawable fallback = createTextDrawable(TextUtils.isEmpty(label) ? "TVBox" : label, newWidth, newHeight, roundingRadius);
+        Drawable placeholder = createImagePlaceholderDrawable(newWidth, newHeight, roundingRadius);
+        if (isInvalidImageUrl(url)) {
+            view.setImageDrawable(fallback);
+            return;
+        }
+        RequestOptions options = new RequestOptions()
                 .format(DecodeFormat.PREFER_RGB_565)
-                .diskCacheStrategy(getDiskCacheStrategy(4))
+                .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
                 .dontAnimate()
-                .transform(new CenterCrop(), new RoundedCorners(roundingRadius));
-            if (newWidth > 0 && newHeight > 0) {
-                requestOptions = requestOptions.override(newWidth, newHeight);
-            }
-            Glide.with(App.getInstance())
+                .transform(new FitCenter(), new RoundedCorners(roundingRadius));
+        if (newWidth > 0 && newHeight > 0) {
+            options = options.override(newWidth, newHeight);
+        }
+        Glide.with(App.getInstance())
                 .asBitmap()
                 .load(getUrl(url))
-                .error(R.drawable.img_loading_placeholder)
-                .placeholder(R.drawable.img_loading_placeholder)
-                .listener(getListener(view, ImageView.ScaleType.FIT_XY))
-                .apply(requestOptions)
+                .placeholder(placeholder)
+                .error(fallback)
+                .listener(getListener(view, scaleType, fallback))
+                .apply(options)
                 .into(view);
-        }
     }
 
-    /*
-     * 使用Glide方式获取视频某一帧
-     * @param uri 视频地址
-     * @param imageView 设置image
-     * @param frameTimeMicros 获取某一时间帧.
-     */
+    public static void load(String url, ImageView view, int roundingRadius, int newWidth, int newHeight, String label) {
+        view.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        if (roundingRadius <= 0) roundingRadius = 1;
+        Drawable fallback = createTextDrawable(TextUtils.isEmpty(label) ? "TVBox" : label, newWidth, newHeight, roundingRadius);
+        Drawable placeholder = createImagePlaceholderDrawable(newWidth, newHeight, roundingRadius);
+        if (isInvalidImageUrl(url)) {
+            view.setImageDrawable(fallback);
+            return;
+        }
+        RequestOptions options = new RequestOptions()
+                .format(DecodeFormat.PREFER_RGB_565)
+                .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
+                .dontAnimate()
+                .transform(new CenterCrop(), new RoundedCorners(roundingRadius));
+        if (newWidth > 0 && newHeight > 0) {
+            options = options.override(newWidth, newHeight);
+        }
+        Glide.with(App.getInstance())
+                .asBitmap()
+                .load(getUrl(url))
+                .placeholder(placeholder)
+                .error(fallback)
+                .listener(getListener(view, ImageView.ScaleType.CENTER_CROP, fallback))
+                .apply(options)
+                .into(view);
+    }
+
+    public static void loadUrl(String url, ImageView view) {
+        load(url, view, 10);
+    }
+
     public static void loadVideoScreenshot(String uri, ImageView imageView, long frameTimeMicros) {
         RequestOptions requestOptions = RequestOptions.frameOf(frameTimeMicros * 1000)
-            .set(FRAME_OPTION, MediaMetadataRetriever.OPTION_CLOSEST)
-            .transform(
-        new CenterCrop(),
-        new RoundedCorners(10));
+                .transform(new CenterCrop(), new RoundedCorners(10));
         Glide.with(App.getInstance())
-            .load(uri)
-            .skipMemoryCache(true)
-            .apply(requestOptions)
-            .into(imageView);
+                .load(uri)
+                .skipMemoryCache(true)
+                .apply(requestOptions)
+                .into(imageView);
     }
 
-    public static String getDiskCacheStrategyName(int index) {
-        String[] names = new String[] {
-            "[NONE] 关闭", "[RESOURCE] 转换图片", "[DATA] 原始图片 ", "[ALL] 原始图片和转换图片", "[AUTOMATIC] 自动"
-        };
-        return names[index];
+    public static int getRandomColor() {
+        Random random = new Random();
+        return Color.argb(255, random.nextInt(256), random.nextInt(256), random.nextInt(256));
     }
 
-    public static DiskCacheStrategy getDiskCacheStrategy(int index) {
-        switch (index) {
-            case 1:
-                return DiskCacheStrategy.RESOURCE;
-            case 2:
-                return DiskCacheStrategy.DATA;
-            case 3:
-                return DiskCacheStrategy.ALL;
-            case 4:
-                return DiskCacheStrategy.AUTOMATIC;
-            default:
-                return DiskCacheStrategy.NONE;
+    public static Drawable createTextDrawable(String text) {
+        return createTextDrawable(text, 0, 0, AutoSizeUtils.mm2px(App.getInstance(), 10));
+    }
+
+    private static Drawable createTextDrawable(String text, int width, int height, float cornerRadius) {
+        if (TextUtils.isEmpty(text)) text = "TVBox";
+        if (width <= 0) width = 180;
+        if (height <= 0) height = 240;
+        if (cornerRadius <= 0) cornerRadius = 1;
+        String key = text + "_" + width + "x" + height + "_" + (int) cornerRadius;
+        text = text.substring(0, 1);
+        if (drawableCache.containsKey(key)) return drawableCache.get(key);
+        int randomColor = getRandomColor();
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint.setColor(randomColor);
+        paint.setStyle(Paint.Style.FILL);
+        RectF rectF = new RectF(0, 0, width, height);
+        canvas.drawRoundRect(rectF, cornerRadius, cornerRadius, paint);
+        paint.setColor(Color.WHITE);
+        paint.setTextSize(60);
+        paint.setTextAlign(Paint.Align.CENTER);
+        Paint.FontMetrics fontMetrics = paint.getFontMetrics();
+        float x = width / 2f;
+        float y = (height - fontMetrics.bottom - fontMetrics.top) / 2f;
+        canvas.drawText(text, x, y, paint);
+        Drawable drawable = new BitmapDrawable(App.getInstance().getResources(), bitmap);
+        drawableCache.put(key, drawable);
+        return drawable;
+    }
+
+    private static Drawable createImagePlaceholderDrawable(int width, int height, float cornerRadius) {
+        if (width <= 0) width = 180;
+        if (height <= 0) height = 240;
+        if (cornerRadius <= 0) cornerRadius = 1;
+        String key = "placeholder_" + width + "x" + height + "_" + (int) cornerRadius;
+        if (drawableCache.containsKey(key)) return drawableCache.get(key);
+
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+
+        Bitmap icon = BitmapFactory.decodeResource(App.getInstance().getResources(), com.github.tvbox.osc.R.drawable.icon_img_placeholder);
+        if (icon != null) {
+            float left = (width - icon.getWidth()) / 2f;
+            float top = (height - icon.getHeight()) / 2f;
+            canvas.drawBitmap(icon, left, top, null);
+        }
+
+        Drawable drawable = new BitmapDrawable(App.getInstance().getResources(), bitmap);
+        drawableCache.put(key, drawable);
+        return drawable;
+    }
+
+    public static void clearCache() {
+        drawableCache.clear();
+    }
+
+    public static void clearMemoryCache() {
+        clearCache();
+        try {
+            Glide.get(App.getInstance()).clearMemory();
+            LOG.i("echo-img-clear-memory-cache");
+        } catch (Throwable th) {
+            LOG.i("echo-img-clear-memory-cache-error:" + th.getMessage());
         }
     }
 
     private static Object getUrl(String url) {
         if (url.startsWith("data:")) return url;
-        url = DefaultConfig.checkReplaceProxy(url);
-
         String header = null;
         String referer = null;
-        String ua = UA.random();
+        String ua = null;
         String cookie = null;
-
-        if (url.contains("doubanio.com") && !url.contains("@Referer=") && !url.contains("@User-Agent=")) {
-            url += "@Referer=https://api.douban.com/@User-Agent=" + ua;
-        }
-
-        //检查链接里面是否有自定义header
         if (url.contains("@Headers=")) {
             header = url.split("@Headers=")[1].split("@")[0];
             try {
                 header = URLDecoder.decode(header, "UTF-8");
-            } catch (UnsupportedEncodingException e) {
-                e.printStackTrace();
+            } catch (UnsupportedEncodingException ignored) {
             }
         }
         if (url.contains("@Cookie=")) cookie = url.split("@Cookie=")[1].split("@")[0];
         if (url.contains("@User-Agent=")) ua = url.split("@User-Agent=")[1].split("@")[0];
         if (url.contains("@Referer=")) referer = url.split("@Referer=")[1].split("@")[0];
         url = url.split("@")[0];
-        if(TextUtils.isEmpty(url)) return null;
-        /*   AuthInfo authInfo = new AuthInfo(url);
-        url = authInfo.url; */
+        if (TextUtils.isEmpty(url)) return null;
 
         LazyHeaders.Builder builder = new LazyHeaders.Builder();
-
-        /*     if (!authInfo.auth.isEmpty()) {
-            builder.addHeader(HttpHeaders.AUTHORIZATION, authInfo.auth);
-        }*/
-
+        Map<String, String> headers = new HashMap<>();
         if (!TextUtils.isEmpty(header)) {
-            JsonObject jsonInfo = new Gson()
-                .fromJson(header, JsonObject.class);
-            for (String key: jsonInfo.keySet()) {
-                String val = jsonInfo.get(key)
-                    .getAsString();
-                builder.addHeader(key, val);
+            try {
+                JsonObject jsonInfo = new Gson().fromJson(header, JsonObject.class);
+                for (String key : jsonInfo.keySet()) {
+                    putHeader(headers, key, jsonInfo.get(key).getAsString());
+                }
+            } catch (Throwable ignored) {
             }
-        } else {
-            if (!TextUtils.isEmpty(cookie)) {
-                builder.addHeader(HttpHeaders.COOKIE, cookie);
-            }
-            if (!TextUtils.isEmpty(ua)) {
-                builder.addHeader(HttpHeaders.USER_AGENT, ua);
-            } else {
-                String mobile_UA = "Dalvik/2.1.0 (Linux; U; Android 13; M2102J2SC Build/TKQ1.220829.002)";
-                builder.addHeader(HttpHeaders.USER_AGENT, mobile_UA);
-            }
-            if (!TextUtils.isEmpty(referer)) builder.addHeader(HttpHeaders.REFERER, referer);
         }
-
-        try {
-            URL imgUrl = new URL(url);
-            String host = imgUrl.getHost();
-            builder.addHeader(HttpHeaders.HOST, host);
-        } catch (MalformedURLException e) {
-            e.printStackTrace();
-        }
-
+        putHeader(headers, "Cookie", cookie);
+        if (!TextUtils.isEmpty(ua)) putHeader(headers, "User-Agent", ua);
+        if (!TextUtils.isEmpty(referer)) putHeader(headers, "Referer", referer);
+        for (Map.Entry<String, String> entry : headers.entrySet()) builder.setHeader(entry.getKey(), entry.getValue());
         return new GlideUrl(url, builder.build());
     }
 
-    private static RequestListener < Bitmap > getListener(ImageView view, ImageView.ScaleType scaleType) {
-        return new RequestListener < Bitmap > () {@Override
-            public boolean onLoadFailed(@Nullable GlideException e, Object model, Target < Bitmap > target, boolean isFirstResource) {
+    public static Object getImageModel(String url) {
+        return getUrl(url);
+    }
+
+    private static boolean isInvalidImageUrl(String url) {
+        if (TextUtils.isEmpty(url)) return true;
+        url = url.trim();
+        if (TextUtils.isEmpty(url)) return true;
+        return hasEmptyProxyParam(url, "img");
+    }
+
+    private static boolean hasEmptyProxyParam(String url, String key) {
+        if (!url.startsWith("proxy://") && !url.contains("/proxy?")) return false;
+        int queryIndex = url.indexOf('?');
+        String query = queryIndex >= 0 ? url.substring(queryIndex + 1) : url.substring("proxy://".length());
+        String[] pairs = query.split("&");
+        for (String pair : pairs) {
+            int eqIndex = pair.indexOf('=');
+            if (eqIndex < 0) continue;
+            if (key.equals(pair.substring(0, eqIndex)) && TextUtils.isEmpty(pair.substring(eqIndex + 1))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void putHeader(Map<String, String> headers, String key, String value) {
+        if (TextUtils.isEmpty(key) || TextUtils.isEmpty(value)) return;
+        headers.put(key, value.trim());
+    }
+
+    private static RequestListener<Bitmap> getListener(final ImageView view, final ImageView.ScaleType scaleType, final Drawable fallback) {
+        return new RequestListener<Bitmap>() {
+            @Override
+            public boolean onLoadFailed(@Nullable GlideException e, Object model, Target<Bitmap> target, boolean isFirstResource) {
                 view.setScaleType(scaleType);
-                view.setImageResource(R.drawable.img_loading_placeholder);
+                view.setImageDrawable(fallback);
                 return true;
             }
 
             @Override
-            public boolean onResourceReady(Bitmap resource, Object model, Target < Bitmap > target, DataSource dataSource, boolean isFirstResource) {
+            public boolean onResourceReady(Bitmap resource, Object model, Target<Bitmap> target, DataSource dataSource, boolean isFirstResource) {
                 view.setScaleType(scaleType);
                 return false;
             }

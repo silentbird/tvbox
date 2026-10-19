@@ -7,6 +7,7 @@ import android.util.Log;
 
 import com.chaquo.python.PyObject;
 import com.github.catvod.crawler.Spider;
+import com.google.android.exoplayer2.util.UriUtil;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -27,7 +28,7 @@ public class PythonSpider extends Spider {
     private String name;
 
     public PythonSpider() {
-        this("/storage/emulated/0/plugin/");
+        this(PythonLoader.getInstance().getCachePath());
     }
 
     public PythonSpider(String cache) {
@@ -45,22 +46,32 @@ public class PythonSpider extends Spider {
     }
 
     public void init(Context context, String url) {
+        init(context, url, "");
+    }
+
+    public void init(Context context, String url, String extend) {
         app = PythonLoader.getInstance().pyApp;
         PyObject retValue = app.callAttr("downloadPlugin", cachePath, url);
         Uri uri = Uri.parse(url);
-        String extInfo = uri.getQueryParameter("extend");
+        String extInfo = extend;
+        if (extInfo == null || extInfo.length() == 0) extInfo = uri.getQueryParameter("extend");
         if (null == extInfo) extInfo = "";
         String path = retValue.toString();
         Log.i("PyLoader", "echo-init path: " +path);
         File file = new File(path);
         if (file.exists()) {
             pySpider = app.callAttr("loadFromDisk", path);
+            try {
+                pySpider.put("siteKey", name);
+            } catch (Exception ignored) {
+            }
 
             List<PyObject> poList = app.callAttr("getDependence", pySpider).asList();
             for (PyObject po : poList) {
                 String api = po.toString();
                 Log.i("PyLoader", "echo-init api: " +api);
                 String depUrl = PythonLoader.getInstance().getUrlByApi(api);
+                if (depUrl.isEmpty()) depUrl = resolveDependenceUrl(url, api);
                 if (!depUrl.isEmpty()) {
                     Log.i("PyLoader", "echo-init depUrl: " +depUrl);
                     String tmpPath = app.callAttr("downloadPlugin", cachePath, depUrl).toString();
@@ -68,17 +79,23 @@ public class PythonSpider extends Spider {
                         PyToast.showCancelableToast(api + "加载失败!");
                         return;
                     } else {
+                        app.callAttr("registerPluginAlias", api, tmpPath);
                         PyLog.d(api + ": 加载插件依赖成功！");
                     }
                 }
             }
             app.callAttr("init", pySpider, extInfo);
             loadSuccess = true;
-            Log.i("PyLoader", "echo-init extInfo: " +url+ extInfo);
             PyLog.d(name + ": 下載插件成功！");
         } else {
             PyToast.showCancelableToast(name + "下载插件失败");
         }
+    }
+
+    private String resolveDependenceUrl(String baseUrl, String api) {
+        if (api == null || api.isEmpty()) return "";
+        String dep = api.endsWith(".py") ? api : api + ".py";
+        return UriUtil.resolve(baseUrl, dep);
     }
 
     public String getName() {
@@ -88,6 +105,10 @@ public class PythonSpider extends Spider {
         } else {
             return name;
         }
+    }
+
+    public boolean isLoadSuccess() {
+        return loadSuccess && pySpider != null;
     }
 
     public JSONObject map2json(HashMap<String, String> extend) {
@@ -139,8 +160,11 @@ public class PythonSpider extends Spider {
     }
 
     public Object[] proxyLocal(Map<String,String> params) {
-        Log.i("PyLoader","echo-proxyLocal:param"+params.toString());
-        List<PyObject> list = app.callAttr("localProxy", pySpider, map2json(params).toString()).asList();
+//        Log.i("PyLoader","echo-proxyLocal:param"+params.toString());
+        PyObject proxyResult = app.callAttr("localProxy", pySpider, map2json(params).toString());
+        if (proxyResult == null) return null;
+        List<PyObject> list = proxyResult.asList();
+        if (list == null || list.size() < 3) return null;
         boolean base64 = list.size() > 4 && list.get(4).toInt() == 1;
         boolean headerAvailable = list.size() > 3 && list.get(3) != null;
         Object[] result = new Object[4];
@@ -187,6 +211,7 @@ public class PythonSpider extends Spider {
      * @return
      */
     public String homeContent(boolean filter) {
+        if (pySpider == null) return "{}";
         PyLog.nw("homeContent" + "-" + name, paramLog(filter));
         PyObject po = app.callAttr("homeContent", pySpider, filter);
         String rsp = po.toString();
@@ -297,6 +322,14 @@ public class PythonSpider extends Spider {
      */
     public boolean manualVideoCheck() {
         return false;
+    }
+
+    @Override
+    public void destroy() {
+        try {
+            if (app != null && pySpider != null) app.callAttr("destroy", pySpider);
+        } catch (Exception ignored) {
+        }
     }
 
     public static byte[] decode(String s) {

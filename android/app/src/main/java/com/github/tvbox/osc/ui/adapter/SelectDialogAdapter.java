@@ -1,6 +1,8 @@
 package com.github.tvbox.osc.ui.adapter;
 
 import android.annotation.SuppressLint;
+import android.graphics.Color;
+import android.graphics.Typeface;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -20,9 +22,7 @@ import java.util.List;
 
 public class SelectDialogAdapter<T> extends ListAdapter<T, SelectDialogAdapter.SelectViewHolder> {
 
-    private boolean muteCheck = false;
-
-    static class SelectViewHolder extends RecyclerView.ViewHolder {
+    class SelectViewHolder extends RecyclerView.ViewHolder {
 
         public SelectViewHolder(@NonNull @NotNull View itemView) {
             super(itemView);
@@ -54,16 +54,11 @@ public class SelectDialogAdapter<T> extends ListAdapter<T, SelectDialogAdapter.S
 
     private int select = 0;
 
-    private SelectDialogInterface dialogInterface = null;
+    private SelectDialogInterface dialogInterface;
 
     public SelectDialogAdapter(SelectDialogInterface dialogInterface, DiffUtil.ItemCallback diffCallback) {
-        this(dialogInterface, diffCallback, false);
-    }
-
-    public SelectDialogAdapter(SelectDialogInterface dialogInterface, DiffUtil.ItemCallback diffCallback, boolean muteCheck) {
         super(diffCallback);
         this.dialogInterface = dialogInterface;
-        this.muteCheck = muteCheck;
     }
 
     public void setData(List<T> newData, int defaultSelect) {
@@ -81,20 +76,26 @@ public class SelectDialogAdapter<T> extends ListAdapter<T, SelectDialogAdapter.S
 
     @Override
     public SelectDialogAdapter.SelectViewHolder onCreateViewHolder(@NonNull @NotNull ViewGroup parent, int viewType) {
-        return new SelectViewHolder(LayoutInflater.from(parent.getContext()).inflate(R.layout.item_dialog_select, parent, false));
+        return new SelectDialogAdapter.SelectViewHolder(LayoutInflater.from(parent.getContext()).inflate(R.layout.item_dialog_select, parent, false));
     }
 
     @Override
-    public void onBindViewHolder(@NonNull @NotNull SelectDialogAdapter.SelectViewHolder holder, @SuppressLint("RecyclerView") int position) {    
+    public void onBindViewHolder(@NonNull @NotNull SelectDialogAdapter.SelectViewHolder holder, @SuppressLint("RecyclerView") int position) {
         T value = data.get(position);
         String name = dialogInterface.getDisplay(value);
-        if (!muteCheck && position == select)
-            name = "√ " + name;
-        ((TextView) holder.itemView.findViewById(R.id.tvName)).setText(name);
+        TextView view = holder.itemView.findViewById(R.id.tvName);
+        if (position == select) {
+            view.setTextColor(0xff02f8e1);
+            view .setTypeface(Typeface.defaultFromStyle(Typeface.BOLD));
+        }else {
+            view.setTextColor(Color.WHITE);
+            view .setTypeface(Typeface.defaultFromStyle(Typeface.NORMAL));
+        }
+        view.setText(name);
         holder.itemView.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (!muteCheck && position == select)
+                if (position == select)
                     return;
                 notifyItemChanged(select);
                 select = position;

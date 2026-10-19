@@ -1,9 +1,5 @@
 package com.github.tvbox.osc.bean;
 
-import android.text.TextUtils;
-
-import com.github.tvbox.osc.util.StringUtils;
-
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
@@ -26,7 +22,7 @@ public class AbsJson implements Serializable {
 
     public class AbsJsonVod implements Serializable {
         public int group_id; //: 0
-        public int type_id; //: 32
+        public String type_id; //: 32
         public int type_id_1; //: 31
         public String type_name; //: "国产剧"
         public String vod_actor; //: "黄小戈,赵旭东,时男,傅隽,张佳琳"
@@ -108,13 +104,19 @@ public class AbsJson implements Serializable {
         public String vod_weekday; //: ""
         public String vod_writer; //: "周炎青,刘恒,支雅雪,孙露军,李璐,王梦璇"
         public String vod_year; //: "2021"
+        public String action;
 
         public Movie.Video toXmlVideo() {
             Movie.Video video = new Movie.Video();
             video.tag = vod_tag;
+            video.action = action;
             video.last = vod_time;
             video.id = vod_id;
-            video.tid = type_id;
+            try {
+                video.tid = Integer.parseInt(type_id);
+            } catch (NumberFormatException ignored) {
+                video.tid = 0;
+            }
             video.name = vod_name;
             video.type = type_name;
             // video.dt = vod_play_from == null ? "" : vod_play_from.replace("$$$", ",");
@@ -131,20 +133,15 @@ public class AbsJson implements Serializable {
             video.actor = vod_actor;
             video.director = vod_director;
             Movie.Video.UrlBean urlBean = new Movie.Video.UrlBean();
-            if (!TextUtils.isEmpty(vod_play_from) && !TextUtils.isEmpty(vod_play_url)) {
+            if (vod_play_from != null && vod_play_url != null) {
                 String[] playFlags = vod_play_from.split("\\$\\$\\$");
                 String[] playUrls = vod_play_url.split("\\$\\$\\$");
                 List<Movie.Video.UrlBean.UrlInfo> infoList = new ArrayList<>();
-                for (int i = 0; i < playUrls.length; i++) {
-                    Movie.Video.UrlBean.UrlInfo urlInfo = new Movie.Video.UrlBean.UrlInfo();
-                    if(StringUtils.isEmpty(playUrls[i])){
+                for (int i = 0; i < playFlags.length && i < playUrls.length; i++) {
+                    if (playFlags[i].trim().isEmpty() || playUrls[i].trim().isEmpty())
                         continue;
-                    }
-                    if(i > playFlags.length){
-                        urlInfo.flag = "线路" + i;
-                    } else {
-                        urlInfo.flag = StringUtils.isEmpty(playFlags[i]) ? "线路" + i : playFlags[i];
-                    }
+                    Movie.Video.UrlBean.UrlInfo urlInfo = new Movie.Video.UrlBean.UrlInfo();
+                    urlInfo.flag = playFlags[i].trim();
                     urlInfo.urls = playUrls[i];
                     infoList.add(urlInfo);
                 }
@@ -152,7 +149,6 @@ public class AbsJson implements Serializable {
             }
             video.urlBean = urlBean;
             video.des = vod_content;// <![CDATA[权来]
-            video.tag = vod_tag;
             return video;
         }
     }
@@ -169,16 +165,13 @@ public class AbsJson implements Serializable {
         }
         movie.recordcount = total;
         List<Movie.Video> videoList = new ArrayList<>();
-        if(list != null){
-            for (AbsJsonVod vod : list) {
-                try {
-                    videoList.add(vod.toXmlVideo());
-                } catch (Throwable th) {
-                    movie.pagesize = 0;
-                }
+        for (AbsJsonVod vod : list) {
+            try {
+                videoList.add(vod.toXmlVideo());
+            } catch (Throwable th) {
+                movie.pagesize = 0;
             }
         }
-
         movie.videoList = videoList;
         xml.movie = movie;
         xml.msg = msg;

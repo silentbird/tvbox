@@ -1,7 +1,12 @@
 package com.github.tvbox.osc.bean;
 
+import com.github.tvbox.osc.util.HawkConfig;
+import com.orhanobut.hawk.Hawk;
+
 import java.text.ParsePosition;
 import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.TimeZone;
 
@@ -21,7 +26,7 @@ public class Epginfo {
     public String currentEpgDate = null;
     SimpleDateFormat timeFormat = new SimpleDateFormat("yyyy-MM-dd");
 
-    public Epginfo(Date Date, String str, Date date, String str1, String str2, int pos) {
+    public Epginfo(Date Date,String str, Date date, String str1, String str2,int pos) {
         epgDate = Date;
         currentEpgDate = timeFormat.format(epgDate);
         title = str;
@@ -34,6 +39,12 @@ public class Epginfo {
         userSimpleDateFormat.setTimeZone(TimeZone.getDefault());
         startdateTime = userSimpleDateFormat.parse(simpleDateFormat.format(date) + " " + str1 + ":00 GMT+8:00", new ParsePosition(0));
         enddateTime = userSimpleDateFormat.parse(simpleDateFormat.format(date) + " " + str2 + ":00 GMT+8:00", new ParsePosition(0));
+        if (startdateTime != null && enddateTime != null && !enddateTime.after(startdateTime)) {
+            Calendar calendar = Calendar.getInstance();
+            calendar.setTime(enddateTime);
+            calendar.add(Calendar.DAY_OF_MONTH, 1);
+            enddateTime = calendar.getTime();
+        }
         SimpleDateFormat zoneFormat = new SimpleDateFormat("HH:mm");
         start = zoneFormat.format(startdateTime);
         end = zoneFormat.format(enddateTime);

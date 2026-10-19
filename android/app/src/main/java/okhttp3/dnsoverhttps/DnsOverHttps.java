@@ -38,6 +38,7 @@ import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
+import okhttp3.internal.Util;
 import okhttp3.internal.platform.Platform;
 import okhttp3.internal.publicsuffix.PublicSuffixDatabase;
 import okio.ByteString;
@@ -142,8 +143,16 @@ public class DnsOverHttps implements Dns {
 
     public byte[] lookupHttpsForwardSync(String hostname) throws Throwable {
         ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-        byteArrayOutputStream.write(executeRequestsSync(hostname, DnsRecordCodec.TYPE_A));
-        byteArrayOutputStream.write(executeRequestsSync(hostname, DnsRecordCodec.TYPE_AAAA));
+        try {
+            byteArrayOutputStream.write(executeRequestsSync(hostname, DnsRecordCodec.TYPE_A));
+        } finally {
+
+        }
+        try {
+            byteArrayOutputStream.write(executeRequestsSync(hostname, DnsRecordCodec.TYPE_AAAA));
+        } finally {
+
+        }
         return byteArrayOutputStream.toByteArray();
     }
 
@@ -230,6 +239,28 @@ public class DnsOverHttps implements Dns {
                 failures.add(e);
             }
         }
+    }
+
+    private List<InetAddress> throwBestFailure(String hostname, List<Exception> failures)
+            throws UnknownHostException {
+        if (failures.size() == 0) {
+            throw new UnknownHostException(hostname);
+        }
+
+        Exception failure = failures.get(0);
+
+        if (failure instanceof UnknownHostException) {
+            throw (UnknownHostException) failure;
+        }
+
+        UnknownHostException unknownHostException = new UnknownHostException(hostname);
+        unknownHostException.initCause(failure);
+
+        for (int i = 1; i < failures.size(); i++) {
+            Util.addSuppressedIfPossible(unknownHostException, failures.get(i));
+        }
+
+        throw unknownHostException;
     }
 
     private @Nullable

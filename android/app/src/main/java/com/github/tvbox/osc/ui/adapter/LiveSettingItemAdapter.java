@@ -6,10 +6,10 @@ import android.widget.TextView;
 import com.chad.library.adapter.base.BaseQuickAdapter;
 import com.chad.library.adapter.base.BaseViewHolder;
 import com.github.tvbox.osc.R;
-import com.github.tvbox.osc.base.BaseActivity;
 import com.github.tvbox.osc.bean.LiveSettingItem;
 
 import java.util.ArrayList;
+
 
 /**
  * @author pj567
@@ -27,11 +27,11 @@ public class LiveSettingItemAdapter extends BaseQuickAdapter<LiveSettingItem, Ba
     protected void convert(BaseViewHolder holder, LiveSettingItem item) {
         TextView tvItemName = holder.getView(R.id.tvSettingItemName);
         tvItemName.setText(item.getItemName());
+        tvItemName.setSelected(true);
         int itemIndex = item.getItemIndex();
+        holder.itemView.setSelected(item.isItemSelected());
         if (item.isItemSelected() && itemIndex != focusedItemIndex) {
-            // takagen99: Added Theme Color
-//            tvItemName.setTextColor(mContext.getResources().getColor(R.color.color_theme));
-            tvItemName.setTextColor(((BaseActivity) mContext).getThemeColor());
+            tvItemName.setTextColor(mContext.getResources().getColor(R.color.color_1890FF));
         } else {
             tvItemName.setTextColor(Color.WHITE);
         }
@@ -46,7 +46,6 @@ public class LiveSettingItemAdapter extends BaseQuickAdapter<LiveSettingItem, Ba
             }
         }
         if (selectedItemIndex != -1) {
-            if (getData().size() <= selectedItemIndex) return;
             getData().get(selectedItemIndex).setItemSelected(select);
             notifyItemChanged(selectedItemIndex);
         }

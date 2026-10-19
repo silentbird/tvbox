@@ -1,19 +1,34 @@
 package com.github.catvod.crawler;
 
 import android.content.Context;
-import com.github.tvbox.osc.util.OkGoHelper;
-import com.github.tvbox.osc.util.js.Connect;
+
+import com.github.catvod.net.OkHttp;
+
+import org.json.JSONObject;
+
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
 import okhttp3.Dns;
+import okhttp3.OkHttpClient;
 
 public class Spider {
 
-    public void init(Context context) throws Exception {}
+    public static JSONObject empty = new JSONObject();
+    public String siteKey;
 
-    public void init(Context context, String extend) throws Exception {
+    protected static Context mContext;
+
+    public void init(Context context) {
+        mContext = context;
+    }
+
+    public void init(Context context, String extend) {
         init(context);
+    }
+
+    public void initApi(SpiderApi api) {
     }
 
     /**
@@ -22,7 +37,7 @@ public class Spider {
      * @param filter 是否开启筛选
      * @return
      */
-    public String homeContent(boolean filter) throws Exception {
+    public String homeContent(boolean filter) {
         return "";
     }
 
@@ -31,7 +46,7 @@ public class Spider {
      *
      * @return
      */
-    public String homeVideoContent() throws Exception {
+    public String homeVideoContent() {
         return "";
     }
 
@@ -44,7 +59,7 @@ public class Spider {
      * @param extend
      * @return
      */
-    public String categoryContent(String tid, String pg, boolean filter, HashMap < String, String > extend) throws Exception {
+    public String categoryContent(String tid, String pg, boolean filter, HashMap<String, String> extend) {
         return "";
     }
 
@@ -54,7 +69,7 @@ public class Spider {
      * @param ids
      * @return
      */
-    public String detailContent(List < String > ids) throws Exception {
+    public String detailContent(List<String> ids) {
         return "";
     }
 
@@ -65,8 +80,12 @@ public class Spider {
      * @param quick
      * @return
      */
-    public String searchContent(String key, boolean quick) throws Exception {
+    public String searchContent(String key, boolean quick) {
         return "";
+    }
+
+    public String searchContent(String key, boolean quick, String pg) {
+        return searchContent(key, quick);
     }
 
     /**
@@ -76,11 +95,7 @@ public class Spider {
      * @param id
      * @return
      */
-    public String searchContent(String key, boolean quick, String pg) throws Exception {
-        return "";
-    }
-
-    public String playerContent(String flag, String id, List < String > vipFlags) throws Exception {
+    public String playerContent(String flag, String id, List<String> vipFlags) {
         return "";
     }
 
@@ -90,7 +105,7 @@ public class Spider {
      * @param url
      * @return
      */
-    public boolean manualVideoCheck() throws Exception {
+    public boolean isVideoFormat(String url) {
         return false;
     }
 
@@ -99,19 +114,9 @@ public class Spider {
      *
      * @return
      */
-    public boolean isVideoFormat(String url) throws Exception {
+    public boolean manualVideoCheck() {
         return false;
     }
-
-    public Object[] proxyLocal(Map < String, String > params) throws Exception {
-        return null;
-    }
-
-    public void cancelByTag() {
-
-    }
-
-    public void destroy() {}
 
     /**
      * 直播list
@@ -122,6 +127,39 @@ public class Spider {
     }
 
     public static Dns safeDns() {
-        return OkGoHelper.dnsOverHttps;
+        return OkHttp.dns();
+    }
+
+    public static OkHttpClient client() {
+        return OkHttp.client();
+    }
+
+    /**
+     * 取消请求tag
+     */
+    public void cancelByTag() {
+
+    }
+
+    /**
+     * 销毁
+     */
+    public void destroy() {}
+
+    /**
+     * 爬虫代理
+     * @param params
+     * @return
+     */
+    public Object[] proxyLocal(Map< String, String > params) {
+        return null;
+    }
+
+    public Object[] proxy(Map<String, String> params) {
+        return proxyLocal(params);
+    }
+
+    public String action(String action) {
+        return null;
     }
 }

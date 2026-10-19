@@ -6,16 +6,12 @@ function api() {
     doAction('api', { url: $('#diy_api_url').val() });
 }
 
-function live() {
-    doAction('live', { url: $('#diy_live_url').val() });
+function liveApi() {
+    doAction('liveApi', { url: $('#diy_live_api_url').val() });
 }
 
-function epg() {
-    doAction('epg', { url: $('#diy_epg_url').val() });
-}
-
-function proxys() {
-    doAction('proxys', { url: $('#diy_proxy_server').val() });
+function danmuApi() {
+    doAction('danmuApi', { url: $('#diy_danmu_api_url').val() });
 }
 
 function push() {
@@ -93,12 +89,14 @@ function selectFile(path, canDel) {
     $("#fileInfoDialog").show();
 }
 
-function fileToApi(type) {
+function fileToApi(type, live) {
+    var url;
     if (type === 1) {
-        doAction('api', { url: "clan://localhost/" + current_file });
+        url = "clan://localhost/" + current_file;
     } else {
-        doAction('api', { url: current_remote + current_file });
+        url = current_remote + current_file;
     }
+    doAction(live ? 'liveApi' : 'api', { url: url });
 }
 
 function hideFileInfo() {
@@ -135,10 +133,7 @@ function listFile(path) {
             }
         });
         $('#loadingToast').hide();
-    }).fail(function () {
-        warnToast('读取本地文件失败，可能没有存储权限');
-        $('#loadingToast').hide();
-    });
+    })
 }
 
 function warnToast(msg) {
@@ -150,7 +145,6 @@ function warnToast(msg) {
 }
 
 function uploadFile() {
-    $('#file_uploader').val("");
     $('#file_uploader').click();
 }
 

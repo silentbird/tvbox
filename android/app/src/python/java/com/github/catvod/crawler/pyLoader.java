@@ -1,65 +1,69 @@
-// 文件: app/src/python/java/com/github/catvod/crawler/python/PyLoader.java
 package com.github.catvod.crawler;
 
-import android.Manifest;
-import android.content.pm.PackageManager;
+import android.os.Build;
 import android.util.Log;
-
-import androidx.core.content.ContextCompat;
 
 import com.github.catvod.crawler.python.IPyLoader;
 import com.github.tvbox.osc.base.App;
 import com.github.tvbox.osc.util.LOG;
-import com.github.tvbox.osc.util.MD5;
 import com.undcover.freedom.pyramid.PythonLoader;
 import com.undcover.freedom.pyramid.PythonSpider;
-import java.io.UnsupportedEncodingException;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class pyLoader implements IPyLoader {
-    private final PythonLoader pythonLoader;
+    private PythonLoader pythonLoader;
     private final ConcurrentHashMap<String, Spider> spiders;
     private String lastConfig = null; // 记录上次的配置
 
     public pyLoader() {
-        pythonLoader = PythonLoader.getInstance().setApplication(App.getInstance());
         spiders = new ConcurrentHashMap<>();
     }
 
     @Override
-    public void clear() {
+    public synchronized void clear() {
         spiders.clear();
+        if (pythonLoader != null) {
+            pythonLoader.clear();
+        }
+        lastConfig = null;
+        recentPyKey = null;
     }
 
     @Override
     public void setConfig(String jsonStr) {
+        if (!isPythonSupported()) {
+            Log.w("PyLoader", "python32 is disabled on Android 16+ 32-bit process.");
+            return;
+        }
         if (jsonStr != null && !jsonStr.equals(lastConfig)) {
             Log.i("PyLoader", "echo-setConfig 初始化json ");
-            pythonLoader.setConfig(jsonStr);
+            getPythonLoader().setConfig(jsonStr);
             lastConfig = jsonStr;
         }
     }
 
-    private String recentPyApi;
+    private String recentPyKey;
     @Override
-    public void setRecentPyKey(String pyApi) {
-        recentPyApi = pyApi;
+    public void setRecentPyKey(String key) {
+        recentPyKey = key;
     }
 
     @Override
-    public Spider getSpider(String key, String cls, String ext) {
+    public synchronized Spider getSpider(String key, String cls, String ext) {
+        if (!isPythonSupported()) {
+            Log.w("PyLoader", "python32 is disabled on Android 16+ 32-bit process.");
+            return new SpiderNull();
+        }
         if (spiders.containsKey(key)) {
             Log.i("PyLoader", "echo-getSpider spider缓存: " + key);
             return spiders.get(key);
         }
         try {
-            if (ContextCompat.checkSelfPermission(App.getInstance(), Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-                Log.i("PyLoader", "无存储权限，终止执行");
-                return new SpiderNull();
-            }
-            Log.i("PyLoader", "echo-getSpider url: " + getPyUrl(cls, ext));
-            Spider sp = pythonLoader.getSpider(key, getPyUrl(cls, ext));
+            Log.i("PyLoader", "echo-getSpider url: " + cls);
+            Spider sp = getPythonLoader().getSpider(key, cls, ext);
+            if (sp == null) return new SpiderNull();
+            if (sp instanceof SpiderNull) return sp;
 //            Log.i("PyLoader", "echo-getSpider homeContent: " + sp.homeContent(true));
             spiders.put(key, sp);
             Log.i("PyLoader", "echo-getSpider 加载spider: " + key);
@@ -72,10 +76,18 @@ public class pyLoader implements IPyLoader {
 
     @Override
     public Object[] proxyInvoke(Map<String, String> params){
-        if(recentPyApi==null)return null;
-        LOG.i("echo-recentPyApi" + recentPyApi);
+        return proxyInvoke(params, recentPyKey);
+    }
+
+    @Override
+    public Object[] proxyInvoke(Map<String, String> params, String key){
+        if (!isPythonSupported()) return null;
+        if(key==null || key.isEmpty())return null;
+        LOG.i("echo-recentPyKey" + key);
         try {
-            PythonSpider originalSpider = (PythonSpider) getSpider(MD5.string2MD5(recentPyApi), recentPyApi,"");
+            Spider spider = spiders.get(key);
+            if (!(spider instanceof PythonSpider)) return null;
+            PythonSpider originalSpider = (PythonSpider) spider;
             return originalSpider.proxyLocal(params);
         } catch (Throwable th) {
             LOG.i("echo-proxyInvoke_Throwable:---" + th.getMessage());
@@ -84,12 +96,16 @@ public class pyLoader implements IPyLoader {
         return null;
     }
 
-    private String getPyUrl(String api, String ext) throws UnsupportedEncodingException {
-        StringBuilder urlBuilder = new StringBuilder(api);
-        if (!ext.isEmpty()) {
-//            ext= URLEncoder.encode(ext,"utf8");
-            urlBuilder.append(api.contains("?") ? "&" : "?").append("extend=").append(ext);
+    private PythonLoader getPythonLoader() {
+        if (pythonLoader == null) {
+            pythonLoader = PythonLoader.getInstance().setApplication(App.getInstance());
         }
-        return urlBuilder.toString();
+        return pythonLoader;
+    }
+
+    private boolean isPythonSupported() {
+        if (Build.VERSION.SDK_INT < 36) return true;
+        if (Build.VERSION.SDK_INT < 23) return true;
+        return android.os.Process.is64Bit();
     }
 }

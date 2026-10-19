@@ -6,7 +6,6 @@ import android.widget.TextView;
 import com.chad.library.adapter.base.BaseQuickAdapter;
 import com.chad.library.adapter.base.BaseViewHolder;
 import com.github.tvbox.osc.R;
-import com.github.tvbox.osc.base.BaseActivity;
 import com.github.tvbox.osc.bean.LiveChannelGroup;
 
 import java.util.ArrayList;
@@ -29,11 +28,11 @@ public class LiveChannelGroupAdapter extends BaseQuickAdapter<LiveChannelGroup, 
     protected void convert(BaseViewHolder holder, LiveChannelGroup item) {
         TextView tvGroupName = holder.getView(R.id.tvChannelGroupName);
         tvGroupName.setText(item.getGroupName());
+        tvGroupName.setSelected(true);
         int groupIndex = item.getGroupIndex();
+        holder.itemView.setSelected(groupIndex == selectedGroupIndex);
         if (groupIndex == selectedGroupIndex && groupIndex != focusedGroupIndex) {
-            // takagen99: Added Theme Color
-//            tvGroupName.setTextColor(mContext.getResources().getColor(R.color.color_theme));
-            tvGroupName.setTextColor(((BaseActivity) mContext).getThemeColor());
+            tvGroupName.setTextColor(mContext.getResources().getColor(R.color.color_1890FF));
         } else {
             tvGroupName.setTextColor(Color.WHITE);
         }
@@ -43,10 +42,8 @@ public class LiveChannelGroupAdapter extends BaseQuickAdapter<LiveChannelGroup, 
         if (selectedGroupIndex == this.selectedGroupIndex) return;
         int preSelectedGroupIndex = this.selectedGroupIndex;
         this.selectedGroupIndex = selectedGroupIndex;
-        if (preSelectedGroupIndex != -1)
-            notifyItemChanged(preSelectedGroupIndex);
-        if (this.selectedGroupIndex != -1)
-            notifyItemChanged(this.selectedGroupIndex);
+        notifyGroupChanged(preSelectedGroupIndex);
+        notifyGroupChanged(this.selectedGroupIndex);
     }
 
     public int getSelectedGroupIndex() {
@@ -56,8 +53,19 @@ public class LiveChannelGroupAdapter extends BaseQuickAdapter<LiveChannelGroup, 
     public void setFocusedGroupIndex(int focusedGroupIndex) {
         this.focusedGroupIndex = focusedGroupIndex;
         if (this.focusedGroupIndex != -1)
-            notifyItemChanged(this.focusedGroupIndex);
+            notifyGroupChanged(this.focusedGroupIndex);
         else if (this.selectedGroupIndex != -1)
-            notifyItemChanged(this.selectedGroupIndex);
+            notifyGroupChanged(this.selectedGroupIndex);
+    }
+
+    public void clearGroupState() {
+        selectedGroupIndex = -1;
+        focusedGroupIndex = -1;
+    }
+
+    private void notifyGroupChanged(int position) {
+        if (position >= 0 && position < getItemCount()) {
+            notifyItemChanged(position);
+        }
     }
 }

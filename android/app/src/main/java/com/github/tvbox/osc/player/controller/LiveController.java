@@ -3,10 +3,14 @@ package com.github.tvbox.osc.player.controller;
 import android.content.Context;
 import android.view.MotionEvent;
 import android.widget.ProgressBar;
+import android.widget.Toast;
 
 import com.github.tvbox.osc.R;
+import com.github.tvbox.osc.base.App;
 
 import org.jetbrains.annotations.NotNull;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 /**
  * 直播控制器
@@ -33,7 +37,7 @@ public class LiveController extends BaseController {
     }
 
     public interface LiveControlListener {
-        boolean singleTap(MotionEvent e);
+        boolean singleTap();
 
         void longPress();
 
@@ -50,7 +54,7 @@ public class LiveController extends BaseController {
 
     @Override
     public boolean onSingleTapConfirmed(MotionEvent e) {
-        if (listener.singleTap(e))
+        if (listener.singleTap())
             return true;
         return super.onSingleTapConfirmed(e);
     }

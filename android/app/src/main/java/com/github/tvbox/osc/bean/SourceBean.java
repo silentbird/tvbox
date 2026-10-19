@@ -9,45 +9,51 @@ public class SourceBean {
     private int type;   // 0 xml 1 json 3 Spider
     private int searchable; // 是否可搜索
     private int quickSearch; // 是否可以快速搜索
-    private int filterable; // 可筛选?
-    private int hide; // 设置的选择列表里隐藏
+    private int changeable = 1;
+    private int filterable; // 是否可以站点选择
     private String playerUrl; // 站点解析Url
     private String ext; // 扩展数据
     private String jar; // 自定义jar
     private ArrayList<String> categories = null; // 分类&排序
-    private int playerType; // 0 system 1 ikj 2 exo 10 mxplayer -1 以参数设置页面的为准
+    private int playerType; // 1 ijk 2 exo 10 mxplayer -1 以参数设置页面的为准
+    private int timeout; // 站点播放信息获取超时，单位秒
     private String clickSelector; // 需要点击播放的嗅探站点selector   ddrk.me;#id
     private String style; // 展示风格
+
+    private String safeString(String value) {
+        return value == null ? "" : value;
+    }
+
     public String getKey() {
-        return key;
+        return safeString(key);
     }
 
     public void setKey(String key) {
-        this.key = key;
+        this.key = safeString(key);
     }
 
     public String getName() {
-        return name;
+        return safeString(name);
     }
 
     public void setName(String name) {
-        this.name = name;
+        this.name = safeString(name);
     }
 
     public String getApi() {
-        return api;
+        return safeString(api);
     }
 
     public void setApi(String api) {
-        this.api = api;
+        this.api = safeString(api);
     }
 
     public void setPlayerUrl(String playerUrl) {
-        this.playerUrl = playerUrl;
+        this.playerUrl = safeString(playerUrl);
     }
 
     public String getPlayerUrl() {
-        return playerUrl;
+        return safeString(playerUrl);
     }
 
     public int getType() {
@@ -74,6 +80,14 @@ public class SourceBean {
         this.quickSearch = quickSearch;
     }
 
+    public boolean isChangeable() {
+        return changeable != 0;
+    }
+
+    public void setChangeable(int changeable) {
+        this.changeable = changeable;
+    }
+
     public int getFilterable() {
         return filterable;
     }
@@ -82,20 +96,12 @@ public class SourceBean {
         this.filterable = filterable;
     }
 
-    public int getHide() {
-        return hide;
-    }
-
-    public void setHide(int hide) {
-        this.hide = hide;
-    }
-
     public String getExt() {
-        return ext;
+        return safeString(ext);
     }
 
     public void setExt(String ext) {
-        this.ext = ext;
+        this.ext = safeString(ext);
     }
 
     public ArrayList<String> getCategories() {
@@ -107,34 +113,31 @@ public class SourceBean {
     }
 
     public String getJar() {
-        return jar;
+        return safeString(jar);
     }
 
     public void setJar(String jar) {
-        this.jar = jar;
+        this.jar = safeString(jar);
     }
 
-    public int getPlayerType() {
-        return playerType;
+    public int getPlayerType() { return playerType; }
+
+    public void setPlayerType(int playerType) { this.playerType = playerType; }
+
+    public int getTimeout() { return timeout; }
+
+    public void setTimeout(int timeout) { this.timeout = timeout; }
+
+    public int getPlayTimeoutSeconds() {
+        return timeout > 0 ? Math.max(5, Math.min(60, timeout)) : 15;
     }
 
-    public void setPlayerType(int playerType) {
-        this.playerType = playerType;
-    }
+    public String getClickSelector() { return safeString(clickSelector); }
 
-    public String getClickSelector() {
-        return clickSelector;
-    }
+    public void setClickSelector(String clickSelector) { this.clickSelector = safeString(clickSelector); }
 
-    public void setClickSelector(String clickSelector) {
-        this.clickSelector = clickSelector;
-    }
 
-    public String getStyle() { 
-        return style; 
-    }
+    public String getStyle() { return safeString(style); }
 
-    public void setStyle(String style) { 
-        this.style = style; 
-    }
+    public void setStyle(String style) { this.style = safeString(style); }
 }

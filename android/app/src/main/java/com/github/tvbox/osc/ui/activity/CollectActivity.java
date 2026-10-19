@@ -1,11 +1,12 @@
 package com.github.tvbox.osc.ui.activity;
 
 import android.content.Intent;
+import android.graphics.Color;
 import android.os.Bundle;
 import android.view.View;
 import android.view.animation.BounceInterpolator;
-import android.widget.ImageView;
 import android.widget.TextView;
+import android.widget.ImageView;
 
 import com.chad.library.adapter.base.BaseQuickAdapter;
 import com.github.tvbox.osc.R;
@@ -20,6 +21,7 @@ import com.github.tvbox.osc.util.FastClickCheckUtil;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.owen.tvrecyclerview.widget.TvRecyclerView;
 import com.owen.tvrecyclerview.widget.V7GridLayoutManager;
+import com.orhanobut.hawk.Hawk;
 
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
@@ -29,9 +31,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class CollectActivity extends BaseActivity {
-    private TextView tvDelTip;
     private ImageView tvDelete;
     private ImageView tvClear;
+    private TextView tvDelTip;
     private TvRecyclerView mGridView;
     public static CollectAdapter collectAdapter;
     private boolean delMode = false;
@@ -48,23 +50,17 @@ public class CollectActivity extends BaseActivity {
     }
 
     private void toggleDelMode() {
-        // takagen99: Toggle Delete Mode
-        HawkConfig.hotVodDelete = !HawkConfig.hotVodDelete;
+    	HawkConfig.hotVodDelete = !HawkConfig.hotVodDelete;
         collectAdapter.notifyDataSetChanged();
-
         delMode = !delMode;
         tvDelTip.setVisibility(delMode ? View.VISIBLE : View.GONE);
-
-        // takagen99: Added Theme Color
-//        tvDel.setTextColor(delMode ? getResources().getColor(R.color.color_theme) : Color.WHITE);
-//        tvDel.setTextColor(delMode ? getThemeColor() : Color.WHITE);
     }
 
     private void initView() {
         EventBus.getDefault().register(this);
-        tvDelTip = findViewById(R.id.tvDelTip);
         tvDelete = findViewById(R.id.tvDelete);
         tvClear = findViewById(R.id.tvClear);
+        tvDelTip = findViewById(R.id.tvDelTip);
         mGridView = findViewById(R.id.mGridView);
         mGridView.setHasFixedSize(true);
         mGridView.setLayoutManager(new V7GridLayoutManager(this.mContext, isBaseOnWidth() ? 5 : 6));
@@ -102,7 +98,7 @@ public class CollectActivity extends BaseActivity {
 
             @Override
             public void onItemSelected(TvRecyclerView parent, View itemView, int position) {
-                itemView.animate().scaleX(1.2f).scaleY(1.2f).setDuration(300).setInterpolator(new BounceInterpolator()).start();
+                itemView.animate().scaleX(1.05f).scaleY(1.05f).setDuration(300).setInterpolator(new BounceInterpolator()).start();
             }
 
             @Override
@@ -124,6 +120,9 @@ public class CollectActivity extends BaseActivity {
                             Bundle bundle = new Bundle();
                             bundle.putString("id", vodInfo.vodId);
                             bundle.putString("sourceKey", vodInfo.sourceKey);
+                            bundle.putString("title", vodInfo.name);
+                            bundle.putString("picture", vodInfo.pic);
+                            bundle.putBoolean("collect", true);
                             jumpActivity(DetailActivity.class, bundle);
                         } else {
                             Intent newIntent = new Intent(mContext, SearchActivity.class);
@@ -138,12 +137,16 @@ public class CollectActivity extends BaseActivity {
         collectAdapter.setOnItemLongClickListener(new BaseQuickAdapter.OnItemLongClickListener() {
             @Override
             public boolean onItemLongClick(BaseQuickAdapter adapter, View view, int position) {
-//                FastClickCheckUtil.check(view);
-//                VodCollect vodInfo = collectAdapter.getData().get(position);
-//                collectAdapter.remove(position);
-//                RoomDataManger.deleteVodCollect(vodInfo.getId());
-                tvDelete.setFocusable(true);
-                toggleDelMode();
+                VodCollect vodInfo = collectAdapter.getData().get(position);
+                if (vodInfo != null) {
+                    Bundle bundle = new Bundle();
+                    bundle.putString("title", vodInfo.name);
+                    if (Hawk.get(HawkConfig.FAST_SEARCH_MODE, true)) {
+                        jumpActivity(FastSearchActivity.class, bundle);
+                    } else {
+                        jumpActivity(SearchActivity.class, bundle);
+                    }
+                }
                 return true;
             }
         });

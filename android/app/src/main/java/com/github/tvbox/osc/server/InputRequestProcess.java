@@ -45,27 +45,20 @@ public class InputRequestProcess implements RequestProcess {
                             mDataReceiver.onApiReceived(params.get("url").trim());
                             break;
                         }
-                        case "live": {
-                            mDataReceiver.onLiveReceived(params.get("url").trim());
+                        case "liveApi": {
+                            mDataReceiver.onLiveApiReceived(params.get("url").trim());
                             break;
                         }
-                        case "epg": {
-                            mDataReceiver.onEpgReceived(params.get("url").trim());
-                            break;
-                        }
-                        case "proxys": {
-                            mDataReceiver.onProxysReceived(params.get("url").trim());
+                        case "danmuApi": {
+                            mDataReceiver.onDanmuApiReceived(params.get("url").trim());
                             break;
                         }
                         case "push": {
-                            // 暂未实现
-                            mDataReceiver.onPushReceived(params.get("url").trim());
+                            String url = params.get("url");
+                            if (url != null && url.trim().length() > 0) {
+                                mDataReceiver.onPushReceived(url.trim());
+                            }
                             break;
-                        }
-                        case "mirror": {
-                            //推送当前电影、电视剧……
-                            mDataReceiver.onMirrorReceived(params.get("id").trim(), params.get("sourceKey").trim());
-                            return RemoteServer.createPlainTextResponse(NanoHTTPD.Response.Status.OK, "mirrored");
                         }
                     }
                 }

@@ -1,7 +1,6 @@
 package com.github.tvbox.osc.ui.activity;
 
 import android.Manifest;
-import android.content.Context;
 import android.animation.Animator;
 import android.animation.AnimatorSet;
 import android.animation.IntEvaluator;
@@ -9,14 +8,9 @@ import android.animation.ObjectAnimator;
 import android.annotation.SuppressLint;
 import android.content.DialogInterface;
 import android.content.Intent;
-import android.content.res.Resources;
-import android.graphics.Color;
-import android.net.ConnectivityManager;
-import android.net.NetworkInfo;
-import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
-import android.provider.Settings;
+import android.util.TypedValue;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -24,25 +18,24 @@ import android.view.animation.AccelerateInterpolator;
 import android.view.animation.AlphaAnimation;
 import android.view.animation.Animation;
 import android.view.animation.BounceInterpolator;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.lifecycle.Observer;
 import androidx.lifecycle.ViewModelProvider;
-import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.viewpager.widget.ViewPager;
 
 import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.api.ApiConfig;
-import com.github.tvbox.osc.base.App;
 import com.github.tvbox.osc.base.BaseActivity;
 import com.github.tvbox.osc.base.BaseLazyFragment;
 import com.github.tvbox.osc.bean.AbsSortXml;
+import com.github.tvbox.osc.bean.Movie;
 import com.github.tvbox.osc.bean.MovieSort;
 import com.github.tvbox.osc.bean.SourceBean;
 import com.github.tvbox.osc.event.RefreshEvent;
@@ -82,48 +75,68 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 
 import me.jessyan.autosize.utils.AutoSizeUtils;
 
 public class HomeActivity extends BaseActivity {
-
-    // takagen99: Added to allow read string
-    private static Resources res;
-
-    private View currentView;
     private LinearLayout topLayout;
     private LinearLayout contentLayout;
-    private TextView tvName;
-    private ImageView tvWifi;
-    private ImageView tvFind;
-    private ImageView tvStyle;
-    private ImageView tvDraw;
-    private ImageView tvMenu;
     private TextView tvDate;
+    private TextView tvName;
     private TvRecyclerView mGridView;
     private NoScrollViewPager mViewPager;
     private SourceViewModel sourceViewModel;
     private SortAdapter sortAdapter;
     private HomePageAdapter pageAdapter;
+    private View currentView;
     private final List<BaseLazyFragment> fragments = new ArrayList<>();
     private boolean isDownOrUp = false;
     private boolean sortChange = false;
     private int currentSelected = 0;
     private int sortFocused = 0;
     public View sortFocusView = null;
+    private String loadingSourceKey;
+    private String previousHomeName;
+    private SourceBean previousHomeSource;
+    private boolean homeSortLoading = false;
+    private boolean refreshHomeRec = false;
     private final Handler mHandler = new Handler();
     private long mExitTime = 0;
+    private boolean eventBusRegistered = false;
     private final Runnable mRunnable = new Runnable() {
-        @SuppressLint({"DefaultLocale", "SetTextI18n"})
+        @SuppressLint("SetTextI18n")
         @Override
         public void run() {
             Date date = new Date();
-            @SuppressLint("SimpleDateFormat")
-			//修改时间分隔符
-            SimpleDateFormat timeFormat = new SimpleDateFormat(getString(R.string.hm_date1) + " | " + getString(R.string.hm_date2));
+            SimpleDateFormat timeFormat = new SimpleDateFormat("yyyy/MM/dd  E  HH:mm", Locale.CHINA);
             tvDate.setText(timeFormat.format(date));
             mHandler.postDelayed(this, 1000);
+        }
+    };
+    private final Runnable refreshTopInfoTextSizeRunnable = new Runnable() {
+        @Override
+        public void run() {
+            refreshTopInfoTextSize();
+        }
+    };
+    private final Runnable refreshTopLayoutRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (topLayout == null || isActivityUnavailable() || currentSelected != 0 || topHide != 0) {
+                return;
+            }
+            // OnePlus devices may finish applying immersive mode after the first measure.
+            // Re-apply the visible top state once the final display metrics are available.
+            hideSysBar();
+            ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) topLayout.getLayoutParams();
+            params.topMargin = AutoSizeUtils.mm2px(HomeActivity.this, 10.0f);
+            params.height = AutoSizeUtils.mm2px(HomeActivity.this, 50.0f);
+            topLayout.setLayoutParams(params);
+            topLayout.setAlpha(1.0f);
+            refreshTopInfoTextSize();
+            topLayout.requestLayout();
         }
     };
 
@@ -132,16 +145,18 @@ public class HomeActivity extends BaseActivity {
         return R.layout.activity_home;
     }
 
+    @Override
+    protected boolean shouldRefreshAutoSize() {
+        return true;
+    }
+
     boolean useCacheConfig = false;
 
     @Override
     protected void init() {
-        // takagen99: Added to allow read string
-        res = getResources();
-
         EventBus.getDefault().register(this);
+        eventBusRegistered = true;
         ControlManager.get().startServer();
-        App.startWebserver();
         initView();
         initViewModel();
         useCacheConfig = false;
@@ -153,22 +168,12 @@ public class HomeActivity extends BaseActivity {
         initData();
     }
 
-    // takagen99: Added to allow read string
-    public static Resources getRes() {
-        return res;
-    }
-
     private void initView() {
         this.topLayout = findViewById(R.id.topLayout);
-        this.tvName = findViewById(R.id.tvName);
-        this.tvWifi = findViewById(R.id.tvWifi);
-        this.tvFind = findViewById(R.id.tvFind);
-        this.tvStyle = findViewById(R.id.tvStyle);
-        this.tvDraw = findViewById(R.id.tvDrawer);
-        this.tvMenu = findViewById(R.id.tvMenu);
         this.tvDate = findViewById(R.id.tvDate);
+        this.tvName = findViewById(R.id.tvName);
         this.contentLayout = findViewById(R.id.contentLayout);
-        this.mGridView = findViewById(R.id.mGridViewCategory);
+        this.mGridView = findViewById(R.id.mGridView);
         this.mViewPager = findViewById(R.id.mViewPager);
         this.sortAdapter = new SortAdapter();
         this.mGridView.setLayoutManager(new V7LinearLayoutManager(this.mContext, 0, false));
@@ -189,12 +194,25 @@ public class HomeActivity extends BaseActivity {
         this.mGridView.setOnItemListener(new TvRecyclerView.OnItemListener() {
             public void onItemPreSelected(TvRecyclerView tvRecyclerView, View view, int position) {
                 if (view != null && !HomeActivity.this.isDownOrUp) {
-                    view.animate().scaleX(1.0f).scaleY(1.0f).setDuration(250).start();
-                    TextView textView = view.findViewById(R.id.tvTitle);
-                    textView.getPaint().setFakeBoldText(false);
-                    textView.setTextColor(HomeActivity.this.getResources().getColor(R.color.color_FFFFFF_70));
-                    textView.invalidate();
-                    view.findViewById(R.id.tvFilter).setVisibility(View.GONE);
+                    mHandler.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            TextView textView = view.findViewById(R.id.tvTitle);
+                            textView.getPaint().setFakeBoldText(false);
+                            if (sortFocused == p) {
+                                view.animate().scaleX(1.1f).scaleY(1.1f).setInterpolator(new BounceInterpolator()).setDuration(300).start();
+                                textView.setTextColor(HomeActivity.this.getResources().getColor(R.color.color_FFFFFF));
+                            } else {
+                                view.animate().scaleX(1.0f).scaleY(1.0f).setDuration(300).start();
+                                textView.setTextColor(HomeActivity.this.getResources().getColor(R.color.color_BBFFFFFF));
+                                view.findViewById(R.id.tvFilter).setVisibility(View.GONE);
+                                view.findViewById(R.id.tvFilterColor).setVisibility(View.GONE);
+                            }
+                            textView.invalidate();
+                        }
+
+                        public final int p = position;
+                    }, 10);
                 }
             }
 
@@ -203,19 +221,13 @@ public class HomeActivity extends BaseActivity {
                     HomeActivity.this.currentView = view;
                     HomeActivity.this.isDownOrUp = false;
                     HomeActivity.this.sortChange = true;
-                    view.animate().scaleX(1.1f).scaleY(1.1f).setInterpolator(new BounceInterpolator()).setDuration(250).start();
+                    view.animate().scaleX(1.1f).scaleY(1.1f).setInterpolator(new BounceInterpolator()).setDuration(300).start();
                     TextView textView = view.findViewById(R.id.tvTitle);
                     textView.getPaint().setFakeBoldText(true);
                     textView.setTextColor(HomeActivity.this.getResources().getColor(R.color.color_FFFFFF));
                     textView.invalidate();
-//                    if (!sortAdapter.getItem(position).filters.isEmpty())
-//                        view.findViewById(R.id.tvFilter).setVisibility(View.VISIBLE);
-                    if (position == -1) {
-                        position = 0;
-                        HomeActivity.this.mGridView.setSelection(0);
-                    }
                     MovieSort.SortData sortData = sortAdapter.getItem(position);
-                    if (null != sortData && !sortData.filters.isEmpty()) {
+                    if (!sortData.filters.isEmpty()) {
                         showFilterIcon(sortData.filterSelectCount());
                     }
                     HomeActivity.this.sortFocusView = view;
@@ -237,12 +249,18 @@ public class HomeActivity extends BaseActivity {
                 }
             }
         });
+
         this.mGridView.setOnInBorderKeyEventListener(new TvRecyclerView.OnInBorderKeyEventListener() {
             public boolean onInBorderKeyEvent(int direction, View view) {
                 if (direction == View.FOCUS_UP) {
                     BaseLazyFragment baseLazyFragment = fragments.get(sortFocused);
-                    if ((baseLazyFragment instanceof GridFragment)) {// 弹出筛选
+                    if (baseLazyFragment instanceof UserFragment) {
+                        refreshHomeSort();
+                        return true;
+                    }
+                    if (baseLazyFragment instanceof GridFragment) {
                         ((GridFragment) baseLazyFragment).forceRefresh();
+                        return true;
                     }
                 }
                 if (direction != View.FOCUS_DOWN) {
@@ -255,134 +273,50 @@ public class HomeActivity extends BaseActivity {
                 return !((GridFragment) baseLazyFragment).isLoad();
             }
         });
-        // Button : TVBOX >> Delete Cache / Longclick to Refresh Source --
         tvName.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 FastClickCheckUtil.check(v);
-                File dir = getCacheDir();
-                FileUtils.recursiveDelete(dir);
-                dir = getExternalCacheDir();
-                FileUtils.recursiveDelete(dir);
-                Toast.makeText(HomeActivity.this, getString(R.string.hm_cache_del), Toast.LENGTH_SHORT).show();
                 if(dataInitOk && jarInitOk){
-                    String cspCachePath = FileUtils.getFilePath()+"/csp/";
                     String jar=ApiConfig.get().getHomeSourceBean().getJar();
                     String jarUrl=!jar.isEmpty()?jar:ApiConfig.get().getSpider();
-                    File cspCacheDir = new File(cspCachePath + MD5.string2MD5(jarUrl)+".jar");
-                    if (!cspCacheDir.exists()){
-                        reloadHome();
-                        return;
-                    }
+                    String jarSource = jarUrl.split(";md5;")[0];
+                    File cspCacheDir = new File(FileUtils.getFilePath() + "/csp/" + MD5.string2MD5(jarSource) + ".jar");
+                    File jarCacheDir = new File(FileUtils.getCachePath() + "/jar/" + MD5.string2MD5(jarSource) + ".jar");
+                    File jarFullCacheDir = new File(FileUtils.getCachePath() + "/jar/" + MD5.string2MD5(jarUrl) + ".jar");
+                    Toast.makeText(mContext, "缓存已清除", Toast.LENGTH_LONG).show();
                     new Thread(() -> {
                         try {
                             FileUtils.deleteFile(cspCacheDir);
-                            ApiConfig.get().clearJarLoader();
-                            reloadHome();
+                            FileUtils.deleteFile(jarCacheDir);
+                            FileUtils.deleteFile(jarFullCacheDir);
+                            FileUtils.clearSpiderCacheFiles();
+                            ApiConfig.get().clearSpiderCache();
+                            refreshHome();
                         } catch (Exception e) {
                             e.printStackTrace();
                         }
                     }).start();
+
+                }else {
+                    jumpActivity(SettingActivity.class);
                 }
             }
         });
         tvName.setOnLongClickListener(new View.OnLongClickListener() {
             @Override
             public boolean onLongClick(View v) {
-                reloadHome();
-                return true;
-            }
-        });
-        // Button : Wifi >> Go into Android Wifi Settings -------------
-        tvWifi.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                try {
-                    startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS));
-                }catch (Exception ignored){
-                }
-            }
-        });
-        // Button : Search --------------------------------------------
-        tvFind.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                jumpActivity(SearchActivity.class);
-            }
-        });
-        // Button : Style --------------------------------------------
-        tvStyle.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                try {
-                    Hawk.put(HawkConfig.HOME_REC_STYLE, !Hawk.get(HawkConfig.HOME_REC_STYLE, false));
-                    if (Hawk.get(HawkConfig.HOME_REC_STYLE, false)) {
-                        UserFragment.tvHotListForGrid.setVisibility(View.VISIBLE);
-                        UserFragment.tvHotListForLine.setVisibility(View.GONE);
-                        Toast.makeText(HomeActivity.this, getString(R.string.hm_style_grid), Toast.LENGTH_SHORT).show();
-                        tvStyle.setImageResource(R.drawable.hm_up_down);
-                    } else {
-                        UserFragment.tvHotListForGrid.setVisibility(View.GONE);
-                        UserFragment.tvHotListForLine.setVisibility(View.VISIBLE);
-                        Toast.makeText(HomeActivity.this, getString(R.string.hm_style_line), Toast.LENGTH_SHORT).show();
-                        tvStyle.setImageResource(R.drawable.hm_left_right);
-                    }
-                } catch (Exception ex) {
-                }
-            }
-        });
-        // Button : Drawer >> To go into App Drawer -------------------
-        tvDraw.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                jumpActivity(AppsActivity.class);
-            }
-        });
-        // Button : Settings >> To go into Settings --------------------
-        tvMenu.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
                 jumpActivity(SettingActivity.class);
-            }
-        });
-        // Button : Settings >> To go into App Settings ----------------
-        tvMenu.setOnLongClickListener(new View.OnLongClickListener() {
-            @Override
-            public boolean onLongClick(View view) {
-                startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", getPackageName(), null)));
                 return true;
-            }
-        });
-        // Button : Date >> Go into Android Date Settings --------------
-        tvDate.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                startActivity(new Intent(Settings.ACTION_DATE_SETTINGS));
             }
         });
         setLoadSir(this.contentLayout);
-        //mHandler.postDelayed(mFindFocus, 250);
-    }
-    //站点切换
-    public static void homeRecf() {
-        int homeRec = Hawk.get(HawkConfig.HOME_REC, -1);
-        int limit = 2;
-        if (homeRec == limit) homeRec = -1;
-        homeRec++;
-        Hawk.put(HawkConfig.HOME_REC, homeRec);
-    }
-    
-    public static boolean reHome(Context appContext) {
-        Intent intent = new Intent(appContext, HomeActivity.class);
-        intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK);
-        Bundle bundle = new Bundle();
-        bundle.putBoolean("useCache", true);
-        intent.putExtras(bundle);
-        appContext.startActivity(intent);
-        return true;
+        //mHandler.postDelayed(mFindFocus, 500);
     }
 
-    private boolean skipNextUpdate = false;	
+
+    private boolean skipNextUpdate = false;
+
     private void initViewModel() {
         sourceViewModel = new ViewModelProvider(this).get(SourceViewModel.class);
         sourceViewModel.sortResult.observe(this, new Observer<AbsSortXml>() {
@@ -392,69 +326,52 @@ public class HomeActivity extends BaseActivity {
                     skipNextUpdate = false;
                     return;
                 }
-                showSuccess();
-                if (absXml != null && absXml.classes != null && absXml.classes.sortList != null) {
-                    sortAdapter.setNewData(DefaultConfig.adjustSort(ApiConfig.get().getHomeSourceBean().getKey(), absXml.classes.sortList, true));
-                } else {
-                    sortAdapter.setNewData(DefaultConfig.adjustSort(ApiConfig.get().getHomeSourceBean().getKey(), new ArrayList<>(), true));
+                if (!homeSortLoading && loadingSourceKey == null) {
+                    return;
                 }
-                initViewPager(absXml);
-                // takagen99 : Switch to show / hide source title
+                if (absXml != null && absXml.sourceKey != null && loadingSourceKey != null && !loadingSourceKey.equals(absXml.sourceKey)) {
+                    return;
+                }
                 SourceBean home = ApiConfig.get().getHomeSourceBean();
-                if (HomeShow) {
-                    if (home != null && home.getName() != null && !home.getName().isEmpty()) tvName.setText(home.getName());
-                        tvName.clearAnimation();
+                showSuccess();
+                clearHomePages();
+                List<MovieSort.SortData> newSortData;
+                if (absXml != null && absXml.classes != null && absXml.classes.sortList != null) {
+                    newSortData = DefaultConfig.adjustSort(ApiConfig.get().getHomeSourceBean().getKey(), absXml.classes.sortList, true);
+                } else {
+                    newSortData = DefaultConfig.adjustSort(ApiConfig.get().getHomeSourceBean().getKey(), new ArrayList<>(), true);
                 }
+                updateSortData(newSortData);
+                initViewPager(absXml);
+                updateHomeRec(absXml);
+                if (home != null && home.getName() != null && !home.getName().isEmpty()) tvName.setText(home.getName());
+                tvName.clearAnimation();
+                homeSortLoading = false;
+                loadingSourceKey = null;
+                previousHomeName = null;
+                previousHomeSource = null;
             }
         });
     }
 
     private boolean dataInitOk = false;
     private boolean jarInitOk = false;
-
-    // takagen99 : Switch to show / hide source title
-    boolean HomeShow = Hawk.get(HawkConfig.HOME_SHOW_SOURCE, false);
-
-    // takagen99 : Check if network is available
-    boolean isNetworkAvailable() {
-        ConnectivityManager cm
-                = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
-        NetworkInfo activeNetworkInfo = cm.getActiveNetworkInfo();
-        return activeNetworkInfo != null && activeNetworkInfo.isConnectedOrConnecting();
-    }
+    private boolean searchSpiderWarmStarted = false;
+    private TipDialog mConfigErrorDialog;
 
     private void initData() {
-        // takagen99: If network available, check connected Wifi or Lan
-        if (isNetworkAvailable()) {
-            ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
-            if (cm.getActiveNetworkInfo().getType() == ConnectivityManager.TYPE_WIFI) {
-                tvWifi.setImageDrawable(res.getDrawable(R.drawable.hm_wifi));
-            } else if (cm.getActiveNetworkInfo().getType() == ConnectivityManager.TYPE_MOBILE) {
-                tvWifi.setImageDrawable(res.getDrawable(R.drawable.hm_mobile));
-            } else if (cm.getActiveNetworkInfo().getType() == ConnectivityManager.TYPE_ETHERNET) {
-                tvWifi.setImageDrawable(res.getDrawable(R.drawable.hm_lan));
-            }
-        }
-
-        // takagen99: Set Style either Grid or Line
-        if (Hawk.get(HawkConfig.HOME_REC_STYLE, false)) {
-            tvStyle.setImageResource(R.drawable.hm_up_down);
-        } else {
-            tvStyle.setImageResource(R.drawable.hm_left_right);
-        }
-
-        mGridView.requestFocus();
-
         if (dataInitOk && jarInitOk) {
-            sourceViewModel.getSort(ApiConfig.get().getHomeSourceBean().getKey());
+            loadHomeSort(false);
             if (hasPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
                 LOG.e("有");
             } else {
                 LOG.e("无");
             }
-            if (Hawk.get(HawkConfig.HOME_DEFAULT_SHOW, false)) {
+            if (!useCacheConfig && Hawk.get(HawkConfig.DEFAULT_LOAD_LIVE, false)) {
                 jumpActivity(LivePlayActivity.class);
-            }         
+            }
+            //爬虫预热 仅首次加载
+            if(!useCacheConfig)warmSearchSpidersOnce();
             return;
         }
         tvNameAnimation();
@@ -468,17 +385,20 @@ public class HomeActivity extends BaseActivity {
                         mHandler.postDelayed(new Runnable() {
                             @Override
                             public void run() {
-                                if (!useCacheConfig) {
-                                    Toast.makeText(HomeActivity.this, getString(R.string.hm_ok), Toast.LENGTH_SHORT).show();
-                                }
+//                                if (!useCacheConfig) Toast.makeText(HomeActivity.this, "自定义jar加载成功", Toast.LENGTH_SHORT).show();
                                 initData();
                             }
                         }, 50);
                     }
 
                     @Override
-                    public void retry() {
-
+                    public void notice(String msg) {
+                        mHandler.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                Toast.makeText(HomeActivity.this, msg, Toast.LENGTH_SHORT).show();
+                            }
+                        });
                     }
 
                     @Override
@@ -488,10 +408,7 @@ public class HomeActivity extends BaseActivity {
                         mHandler.postDelayed(new Runnable() {
                             @Override
                             public void run() {
-                                if ("".equals(msg))
-                                    Toast.makeText(HomeActivity.this, getString(R.string.hm_notok), Toast.LENGTH_SHORT).show();
-                                else
-                                    Toast.makeText(HomeActivity.this, msg, Toast.LENGTH_SHORT).show();
+                                Toast.makeText(HomeActivity.this, msg+" jar load err", Toast.LENGTH_SHORT).show();
                                 initData();
                             }
                         },50);
@@ -501,14 +418,12 @@ public class HomeActivity extends BaseActivity {
             return;
         }
         ApiConfig.get().loadConfig(useCacheConfig, new ApiConfig.LoadConfigCallback() {
-            TipDialog dialog = null;
-
             @Override
-            public void retry() {
+            public void notice(String msg) {
                 mHandler.post(new Runnable() {
                     @Override
                     public void run() {
-                        initData();
+                        Toast.makeText(HomeActivity.this, msg, Toast.LENGTH_SHORT).show();
                     }
                 });
             }
@@ -543,15 +458,18 @@ public class HomeActivity extends BaseActivity {
                 mHandler.post(new Runnable() {
                     @Override
                     public void run() {
-                        if (dialog == null)
-                            dialog = new TipDialog(HomeActivity.this, msg, getString(R.string.hm_retry), getString(R.string.hm_cancel), new TipDialog.OnListener() {
+                        if (isActivityUnavailable()) {
+                            return;
+                        }
+                        if (mConfigErrorDialog == null)
+                            mConfigErrorDialog = new TipDialog(HomeActivity.this, msg, "重试", "取消", new TipDialog.OnListener() {
                                 @Override
                                 public void left() {
                                     mHandler.post(new Runnable() {
                                         @Override
                                         public void run() {
+                                            dismissConfigErrorDialog();
                                             initData();
-                                            dialog.hide();
                                         }
                                     });
                                 }
@@ -563,8 +481,8 @@ public class HomeActivity extends BaseActivity {
                                     mHandler.post(new Runnable() {
                                         @Override
                                         public void run() {
+                                            dismissConfigErrorDialog();
                                             initData();
-                                            dialog.hide();
                                         }
                                     });
                                 }
@@ -576,25 +494,52 @@ public class HomeActivity extends BaseActivity {
                                     mHandler.post(new Runnable() {
                                         @Override
                                         public void run() {
+                                            dismissConfigErrorDialog();
                                             initData();
-                                            dialog.hide();
                                         }
                                     });
                                 }
                             });
-                        if (!dialog.isShowing())
-                            dialog.show();
+                        if (!mConfigErrorDialog.isShowing())
+                            mConfigErrorDialog.show();
                     }
                 });
             }
         }, this);
     }
 
+    private void warmSearchSpidersOnce() {
+        if (searchSpiderWarmStarted) return;
+        searchSpiderWarmStarted = true;
+        ApiConfig.get().warmSearchSpiders();
+    }
+
+    private void loadHomeSort(boolean keepCurrentContent) {
+        SourceBean home = ApiConfig.get().getHomeSourceBean();
+        homeSortLoading = keepCurrentContent;
+        if (keepCurrentContent && home != null && home.getName() != null && !home.getName().isEmpty()) {
+            previousHomeName = tvName.getText() == null ? null : tvName.getText().toString();
+            tvName.setText(home.getName());
+        }
+        tvNameAnimation();
+        if (home == null) {
+            loadingSourceKey = null;
+            if (!keepCurrentContent) showLoading();
+            sourceViewModel.getSort(null);
+            return;
+        }
+        loadingSourceKey = home.getKey();
+        if (!keepCurrentContent) {
+            showLoading();
+        }
+        sourceViewModel.getSort(loadingSourceKey);
+    }
+
     private void initViewPager(AbsSortXml absXml) {
         if (sortAdapter.getData().size() > 0) {
             for (MovieSort.SortData data : sortAdapter.getData()) {
                 if (data.id.equals("my0")) {
-                    if (Hawk.get(HawkConfig.HOME_REC, 0) == 1 && absXml != null && absXml.videoList != null && absXml.videoList.size() > 0) {
+                    if (Hawk.get(HawkConfig.HOME_REC, HawkConfig.DEFAULT_HOME_REC) == 1 && absXml != null && absXml.videoList != null && absXml.videoList.size() > 0) {
                         fragments.add(UserFragment.newInstance(absXml.videoList));
                     } else {
                         fragments.add(UserFragment.newInstance(null));
@@ -618,10 +563,56 @@ public class HomeActivity extends BaseActivity {
         }
     }
 
+    private void clearHomePages() {
+        mHandler.removeCallbacks(mDataRunnable);
+        currentSelected = 0;
+        sortFocused = 0;
+        sortChange = false;
+        sortFocusView = null;
+        currentView = null;
+        if (pageAdapter != null) {
+            mViewPager.setAdapter(null);
+            pageAdapter.removeAll();
+            pageAdapter = null;
+        } else if (!fragments.isEmpty()) {
+            fragments.clear();
+        }
+    }
+
+    private void updateSortData(List<MovieSort.SortData> newSortData) {
+        if (newSortData == null) {
+            newSortData = new ArrayList<>();
+        }
+        List<MovieSort.SortData> oldSortData = sortAdapter.getData();
+        if (oldSortData.isEmpty()
+                || newSortData.isEmpty()
+                || oldSortData.get(0) == null
+                || newSortData.get(0) == null
+                || !"my0".equals(oldSortData.get(0).id)
+                || !"my0".equals(newSortData.get(0).id)) {
+            sortAdapter.setNewData(newSortData);
+            return;
+        }
+        int oldTailCount = oldSortData.size() - 1;
+        if (oldTailCount > 0) {
+            oldSortData.subList(1, oldSortData.size()).clear();
+            sortAdapter.notifyItemRangeRemoved(1, oldTailCount);
+        }
+        if (newSortData.size() > 1) {
+            oldSortData.addAll(newSortData.subList(1, newSortData.size()));
+            sortAdapter.notifyItemRangeInserted(1, newSortData.size() - 1);
+        }
+    }
+
+    @SuppressLint("NotifyDataSetChanged")
     @Override
     public void onBackPressed() {
-        //打断加载
-        if(isLoading()){
+        // 打断加载
+        if (homeSortLoading) {
+            cancelHomeSortLoading();
+            return;
+        }
+        if (isLoading()) {
             refreshEmpty();
             return;
         }
@@ -655,9 +646,9 @@ public class HomeActivity extends BaseActivity {
             } else {
                 doExit();
             }
-        } else if (baseLazyFragment instanceof UserFragment && UserFragment.tvHotListForGrid.canScrollVertically(-1)) {
+        } else if (baseLazyFragment instanceof UserFragment && UserFragment.tvHotList.canScrollVertically(-1)) {
             // 如果 UserFragment 列表可以向上滚动，则滚动到顶部
-            UserFragment.tvHotListForGrid.scrollToPosition(0);
+            UserFragment.tvHotList.scrollToPosition(0);
             this.mGridView.setSelection(0);
         } else {
             doExit();
@@ -668,7 +659,7 @@ public class HomeActivity extends BaseActivity {
         // 如果两次返回间隔小于 2000 毫秒，则退出应用
         if (System.currentTimeMillis() - mExitTime < 2000) {
             AppManager.getInstance().finishAllActivity();
-            EventBus.getDefault().unregister(this);
+            unregisterEventBus();
             ControlManager.get().stopServer();
             finish();
             android.os.Process.killProcess(android.os.Process.myPid());
@@ -676,43 +667,36 @@ public class HomeActivity extends BaseActivity {
         } else {
             // 否则仅提示用户，再按一次退出应用
             mExitTime = System.currentTimeMillis();
-            Toast.makeText(mContext, getString(R.string.hm_exit), Toast.LENGTH_SHORT).show();
+            Toast.makeText(mContext, "再按一次返回键退出应用", Toast.LENGTH_SHORT).show();
         }
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-
-        // takagen99 : Switch to show / hide source title
-        SourceBean home = ApiConfig.get().getHomeSourceBean();
-        if (Hawk.get(HawkConfig.HOME_SHOW_SOURCE, false)) {
-            if (home != null && home.getName() != null && !home.getName().isEmpty()) {
-                tvName.setText(home.getName());
-                tvName.clearAnimation();
-            }
-        } else {
-            tvName.setText(R.string.app_name);
-        }
-
-        // takagen99: Icon Placement
-        if (Hawk.get(HawkConfig.HOME_SEARCH_POSITION, true)) {
-            tvFind.setVisibility(View.VISIBLE);
-        } else {
-            tvFind.setVisibility(View.GONE);
-        }
-        if (Hawk.get(HawkConfig.HOME_MENU_POSITION, true)) {
-            tvMenu.setVisibility(View.VISIBLE);
-        } else {
-            tvMenu.setVisibility(View.GONE);
-        }
+        refreshTopInfoTextSize();
+        mHandler.removeCallbacks(refreshTopInfoTextSizeRunnable);
+        mHandler.postDelayed(refreshTopInfoTextSizeRunnable, 350);
+        mHandler.removeCallbacks(refreshTopLayoutRunnable);
+        mHandler.postDelayed(refreshTopLayoutRunnable, 450);
         mHandler.post(mRunnable);
     }
+
 
     @Override
     protected void onPause() {
         super.onPause();
-        mHandler.removeCallbacksAndMessages(null);
+        mHandler.removeCallbacks(refreshTopInfoTextSizeRunnable);
+        mHandler.removeCallbacks(refreshTopLayoutRunnable);
+        mHandler.removeCallbacks(mRunnable);
+    }
+
+    private void refreshTopInfoTextSize() {
+        if (tvName == null || tvDate == null) {
+            return;
+        }
+        tvName.setTextSize(TypedValue.COMPLEX_UNIT_PX, getResources().getDimension(R.dimen.ts_30));
+        tvDate.setTextSize(TypedValue.COMPLEX_UNIT_PX, getResources().getDimension(R.dimen.ts_26));
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
@@ -727,16 +711,17 @@ public class HomeActivity extends BaseActivity {
             }
         } else if (event.type == RefreshEvent.TYPE_FILTER_CHANGE) {
             if (currentView != null) {
-//                showFilterIcon((int) event.obj);
+                showFilterIcon((int) event.obj);
             }
+        } else if (event.type == RefreshEvent.TYPE_HOME_SOURCE_CHANGE) {
+            refreshHome(false);
         }
     }
 
     private void showFilterIcon(int count) {
-        boolean activated = count > 0;
-        currentView.findViewById(R.id.tvFilter).setVisibility(View.VISIBLE);
-        ImageView imgView = currentView.findViewById(R.id.tvFilter);
-        imgView.setColorFilter(activated ? this.getThemeColor() : Color.WHITE);
+        boolean visible = count > 0;
+        currentView.findViewById(R.id.tvFilterColor).setVisibility(visible ? View.VISIBLE : View.GONE);
+        currentView.findViewById(R.id.tvFilter).setVisibility(visible ? View.GONE : View.VISIBLE);
     }
 
     private final Runnable mDataRunnable = new Runnable() {
@@ -744,30 +729,39 @@ public class HomeActivity extends BaseActivity {
         public void run() {
             if (sortChange) {
                 sortChange = false;
+                BaseLazyFragment baseLazyFragment = fragments.get(sortFocused);
                 if (sortFocused != currentSelected) {
                     currentSelected = sortFocused;
                     mViewPager.setCurrentItem(sortFocused, false);
                     changeTop(sortFocused != 0);
+                    if (baseLazyFragment instanceof GridFragment && ((GridFragment) baseLazyFragment).shouldReloadOnSelect()) {
+                        ((GridFragment) baseLazyFragment).forceRefresh();
+                    }
+                } else if (baseLazyFragment instanceof GridFragment && ((GridFragment) baseLazyFragment).shouldReloadOnSelect()) {
+                    ((GridFragment) baseLazyFragment).forceRefresh();
                 }
             }
         }
     };
 
+    private long menuKeyDownTime = 0;
+    private static final long LONG_PRESS_THRESHOLD = 2000; // 设置长按的阈值，单位是毫秒
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (topHide < 0)
             return false;
-        if (event.getAction() == KeyEvent.ACTION_DOWN) {
-            if (event.getKeyCode() == KeyEvent.KEYCODE_MENU) {
-                showSiteSwitch();
+        int keyCode = event.getKeyCode();
+        if (keyCode == KeyEvent.KEYCODE_MENU) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                menuKeyDownTime = System.currentTimeMillis();
+            } else if (event.getAction() == KeyEvent.ACTION_UP) {
+                long pressDuration = System.currentTimeMillis() - menuKeyDownTime;
+                if (pressDuration >= LONG_PRESS_THRESHOLD) {
+                    jumpActivity(SettingActivity.class);;
+                }else {
+                    showSiteSwitch();
+                }
             }
-//            if (event.getKeyCode() == KeyEvent.KEYCODE_DPAD_DOWN) {
-//                if () {
-//
-//                }
-//            }
-        } else if (event.getAction() == KeyEvent.ACTION_UP) {
-
         }
         return super.dispatchKeyEvent(event);
     }
@@ -798,134 +792,203 @@ public class HomeActivity extends BaseActivity {
 
             }
         });
-        // Hide Top =======================================================
         if (hide && topHide == 0) {
             animatorSet.playTogether(ObjectAnimator.ofObject(viewObj, "marginTop", new IntEvaluator(),
-                            Integer.valueOf(AutoSizeUtils.mm2px(this.mContext, 20.0f)),
-                            Integer.valueOf(AutoSizeUtils.mm2px(this.mContext, 0.0f))),
+                            AutoSizeUtils.mm2px(this.mContext, 10.0f),
+                            AutoSizeUtils.mm2px(this.mContext, 0.0f)),
                     ObjectAnimator.ofObject(viewObj, "height", new IntEvaluator(),
-                            Integer.valueOf(AutoSizeUtils.mm2px(this.mContext, 50.0f)),
-                            Integer.valueOf(AutoSizeUtils.mm2px(this.mContext, 1.0f))),
+                            AutoSizeUtils.mm2px(this.mContext, 50.0f),
+                            AutoSizeUtils.mm2px(this.mContext, 1.0f)),
                     ObjectAnimator.ofFloat(this.topLayout, "alpha", 1.0f, 0.0f));
-            animatorSet.setDuration(250);
+            animatorSet.setDuration(200);
             animatorSet.start();
-            tvName.setFocusable(false);
-            tvWifi.setFocusable(false);
-            tvFind.setFocusable(false);
-            tvStyle.setFocusable(false);
-            tvDraw.setFocusable(false);
-            tvMenu.setFocusable(false);
             return;
         }
-        // Show Top =======================================================
         if (!hide && topHide == 1) {
             animatorSet.playTogether(ObjectAnimator.ofObject(viewObj, "marginTop", new IntEvaluator(),
-                            Integer.valueOf(AutoSizeUtils.mm2px(this.mContext, 0.0f)),
-                            Integer.valueOf(AutoSizeUtils.mm2px(this.mContext, 20.0f))),
+                            AutoSizeUtils.mm2px(this.mContext, 0.0f),
+                            AutoSizeUtils.mm2px(this.mContext, 10.0f)),
                     ObjectAnimator.ofObject(viewObj, "height", new IntEvaluator(),
-                            Integer.valueOf(AutoSizeUtils.mm2px(this.mContext, 1.0f)),
-                            Integer.valueOf(AutoSizeUtils.mm2px(this.mContext, 50.0f))),
+                            AutoSizeUtils.mm2px(this.mContext, 1.0f),
+                            AutoSizeUtils.mm2px(this.mContext, 50.0f)),
                     ObjectAnimator.ofFloat(this.topLayout, "alpha", 0.0f, 1.0f));
-            animatorSet.setDuration(250);
+            animatorSet.setDuration(200);
             animatorSet.start();
-            tvName.setFocusable(true);
-            tvWifi.setFocusable(true);
-            tvFind.setFocusable(true);
-            tvStyle.setFocusable(true);
-            tvDraw.setFocusable(true);
-            tvMenu.setFocusable(true);
         }
     }
 
     @Override
     protected void onDestroy() {
+        dismissHomeDialogs();
+        mHandler.removeCallbacksAndMessages(null);
         super.onDestroy();
-        EventBus.getDefault().unregister(this);
-        AppManager.getInstance().appExit(0);
-        ControlManager.get().stopServer();
+        unregisterEventBus();
+        if (isFinishing()) {
+            ControlManager.get().stopServer();
+        }
     }
 
-    // Site Switch on Home Button
-    void showSiteSwitch() {
-        List<SourceBean> sites = new ArrayList<>();
-        for (SourceBean sb : ApiConfig.get().getSourceBeanList()) {
-            if (sb.getHide() == 0) sites.add(sb);
+    private void unregisterEventBus() {
+        if (eventBusRegistered) {
+            EventBus.getDefault().unregister(this);
+            eventBusRegistered = false;
         }
-        if (sites.size() > 0) {
-            SelectDialog<SourceBean> dialog = new SelectDialog<>(HomeActivity.this);
+    }
 
-            // Multi Column Selection
-            int spanCount = (int) Math.floor(sites.size() / 10);
-            if (spanCount <= 1) spanCount = 1;
-            if (spanCount >= 3) spanCount = 3;
+    private SelectDialog<SourceBean> mSiteSwitchDialog;
 
-            TvRecyclerView tvRecyclerView = dialog.findViewById(R.id.list);
-            tvRecyclerView.setLayoutManager(new V7GridLayoutManager(dialog.getContext(), spanCount));
-            ConstraintLayout cl_root = dialog.findViewById(R.id.cl_root);
+    void showSiteSwitch() {
+        if (isActivityUnavailable()) return;
+        List<SourceBean> sites = ApiConfig.get().getSwitchSourceBeanList();
+        if (sites.isEmpty()) return;
+        int select = sites.indexOf(ApiConfig.get().getHomeSourceBean());
+        if (select < 0 || select >= sites.size()) select = 0;
+        if (mSiteSwitchDialog == null) {
+            mSiteSwitchDialog = new SelectDialog<>(HomeActivity.this);
+            TvRecyclerView tvRecyclerView = mSiteSwitchDialog.findViewById(R.id.list);
+            // 根据 sites 数量动态计算列数
+            int spanCount = (int) Math.floor(sites.size() / 20.0);
+            spanCount = Math.min(spanCount, 2);
+            tvRecyclerView.setLayoutManager(new V7GridLayoutManager(mSiteSwitchDialog.getContext(), spanCount + 1));
+            // 设置对话框宽度
+            ConstraintLayout cl_root = mSiteSwitchDialog.findViewById(R.id.cl_root);
             ViewGroup.LayoutParams clp = cl_root.getLayoutParams();
-            if (spanCount != 1) {
-                clp.width = AutoSizeUtils.mm2px(dialog.getContext(), 400 + 260 * (spanCount - 1));
+            clp.width = AutoSizeUtils.mm2px(mSiteSwitchDialog.getContext(), 380 + 200 * spanCount);
+            mSiteSwitchDialog.setTip("请选择首页数据源");
+        }
+        mSiteSwitchDialog.setAdapter(new SelectDialogAdapter.SelectDialogInterface<SourceBean>() {
+            @Override
+            public void click(SourceBean value, int pos) {
+                dismissSiteSwitchDialog();
+                previousHomeSource = ApiConfig.get().getHomeSourceBean();
+                ApiConfig.get().setSourceBean(value);
+                refreshHome(false);
             }
+            @Override
+            public String getDisplay(SourceBean val) {
+                return val.getName();
+            }
+        }, new DiffUtil.ItemCallback<SourceBean>() {
+            @Override
+            public boolean areItemsTheSame(@NonNull SourceBean oldItem, @NonNull SourceBean newItem) {
+                return oldItem == newItem;
+            }
+            @Override
+            public boolean areContentsTheSame(@NonNull SourceBean oldItem, @NonNull SourceBean newItem) {
+                return oldItem.getKey().equals(newItem.getKey());
+            }
+        }, sites, select);
+        if (!mSiteSwitchDialog.isShowing())
+            mSiteSwitchDialog.show();
+    }
 
-            dialog.setTip(getString(R.string.dia_source));
-            dialog.setAdapter(tvRecyclerView, new SelectDialogAdapter.SelectDialogInterface<SourceBean>() {
-                @Override
-                public void click(SourceBean value, int pos) {
-                    ApiConfig.get().setSourceBean(value);
-                    reloadHome();
-                }
+    private void refreshHome()
+    {
+        refreshHome(true);
+    }
 
-                @Override
-                public String getDisplay(SourceBean val) {
-                    return val.getName();
-                }
-            }, new DiffUtil.ItemCallback<SourceBean>() {
-                @Override
-                public boolean areItemsTheSame(@NonNull @NotNull SourceBean oldItem, @NonNull @NotNull SourceBean newItem) {
-                    return oldItem == newItem;
-                }
+    private void refreshHomeSort() {
+        refreshHomeRec = true;
+        if (UserFragment.homeHotVodAdapter != null) {
+            UserFragment.homeHotVodAdapter.setNewData(new ArrayList<Movie.Video>());
+        }
+        SourceBean home = ApiConfig.get().getHomeSourceBean();
+        if (home != null) {
+            SourceViewModel.clearSortCache(home.getKey());
+        }
+        refreshHome(false);
+    }
 
+    private void updateHomeRec(AbsSortXml absXml) {
+        if (!refreshHomeRec) return;
+        refreshHomeRec = false;
+        if (Hawk.get(HawkConfig.HOME_REC, HawkConfig.DEFAULT_HOME_REC) != 1) return;
+        if (absXml == null || absXml.videoList == null || UserFragment.homeHotVodAdapter == null) return;
+        UserFragment.homeHotVodAdapter.setNewData(absXml.videoList);
+    }
+
+    private void refreshHome(final boolean restart)
+    {
+        if (Thread.currentThread() != android.os.Looper.getMainLooper().getThread()) {
+            mHandler.post(new Runnable() {
                 @Override
-                public boolean areContentsTheSame(@NonNull @NotNull SourceBean oldItem, @NonNull @NotNull SourceBean newItem) {
-                    return oldItem.getKey().equals(newItem.getKey());
-                }
-            }, sites, sites.indexOf(ApiConfig.get().getHomeSourceBean()));
-            dialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
-                @Override
-                public void onDismiss(DialogInterface dialog) {
-//                    if (homeSourceKey != null && !homeSourceKey.equals(Hawk.get(HawkConfig.HOME_API, ""))) {
-//                        Intent intent = new Intent(getApplicationContext(), HomeActivity.class);
-//                        intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK);
-//                        Bundle bundle = new Bundle();
-//                        bundle.putBoolean("useCache", true);
-//                        intent.putExtras(bundle);
-//                        HomeActivity.this.startActivity(intent);
-//                    }
+                public void run() {
+                    refreshHome(restart);
                 }
             });
-            dialog.show();
+            return;
         }
-    }
-
-    void reloadHome() {
+        if (isActivityUnavailable()) {
+            return;
+        }
+        dismissHomeDialogs();
+        if (!restart) {
+            loadHomeSort(true);
+            return;
+        }
         Intent intent = new Intent(getApplicationContext(), HomeActivity.class);
-        intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         Bundle bundle = new Bundle();
         bundle.putBoolean("useCache", true);
         intent.putExtras(bundle);
         HomeActivity.this.startActivity(intent);
     }
 
-    private void refreshEmpty() {
+    private boolean isActivityUnavailable() {
+        return isFinishing() || (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed());
+    }
+
+    private void dismissHomeDialogs() {
+        dismissConfigErrorDialog();
+        dismissSiteSwitchDialog();
+    }
+
+    private void dismissConfigErrorDialog() {
+        if (mConfigErrorDialog != null) {
+            if (mConfigErrorDialog.isShowing()) {
+                mConfigErrorDialog.dismiss();
+            }
+            mConfigErrorDialog = null;
+        }
+    }
+
+    private void dismissSiteSwitchDialog() {
+        if (mSiteSwitchDialog != null) {
+            if (mSiteSwitchDialog.isShowing()) {
+                mSiteSwitchDialog.dismiss();
+            }
+            mSiteSwitchDialog = null;
+        }
+    }
+
+    private void refreshEmpty()
+    {
         skipNextUpdate=true;
         showSuccess();
+        cancelHomeSortLoading();
+        clearHomePages();
         sortAdapter.setNewData(DefaultConfig.adjustSort(ApiConfig.get().getHomeSourceBean().getKey(), new ArrayList<>(), true));
         initViewPager(null);
         tvName.clearAnimation();
     }
 
+    private void cancelHomeSortLoading() {
+        homeSortLoading = false;
+        loadingSourceKey = null;
+        tvName.clearAnimation();
+        if (previousHomeSource != null) {
+            ApiConfig.get().setSourceBean(previousHomeSource);
+        }
+        if (previousHomeName != null && !previousHomeName.isEmpty()) {
+            tvName.setText(previousHomeName);
+        }
+        previousHomeSource = null;
+        previousHomeName = null;
+    }
+
     private void tvNameAnimation()
     {
+        tvName.clearAnimation();
         AlphaAnimation blinkAnimation = new AlphaAnimation(0.0f, 1.0f);
         blinkAnimation.setDuration(500);
         blinkAnimation.setStartOffset(20);
@@ -933,13 +996,4 @@ public class HomeActivity extends BaseActivity {
         blinkAnimation.setRepeatCount(Animation.INFINITE);
         tvName.startAnimation(blinkAnimation);
     }
-//    public void onClick(View v) {
-//        FastClickCheckUtil.check(v);
-//        if (v.getId() == R.id.tvFind) {
-//            jumpActivity(SearchActivity.class);
-//        } else if (v.getId() == R.id.tvMenu) {
-//            jumpActivity(SettingActivity.class);
-//        }
-//    }
-
 }

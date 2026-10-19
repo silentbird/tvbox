@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 3,
-    "identityHash": "a6da0d26156a50aafc04c72a03ea0f93",
+    "identityHash": "33b130e0cef69955d9d6fda2087674b0",
     "entities": [
       {
         "tableName": "cache",
@@ -22,17 +22,17 @@
           }
         ],
         "primaryKey": {
-          "autoGenerate": false,
           "columnNames": [
             "key"
-          ]
+          ],
+          "autoGenerate": false
         },
         "indices": [],
         "foreignKeys": []
       },
       {
         "tableName": "vodRecord",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `vodId` TEXT, `updateTime` INTEGER NOT NULL, `sourceKey` TEXT, `dataJson` TEXT)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `vodId` TEXT, `updateTime` INTEGER NOT NULL, `sourceKey` TEXT, `data` BLOB, `dataJson` TEXT, `testMigration` INTEGER NOT NULL)",
         "fields": [
           {
             "fieldPath": "id",
@@ -56,6 +56,12 @@
             "fieldPath": "sourceKey",
             "columnName": "sourceKey",
             "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "data",
+            "columnName": "data",
+            "affinity": "BLOB",
             "notNull": false
           },
           {
@@ -63,146 +69,157 @@
             "columnName": "dataJson",
             "affinity": "TEXT",
             "notNull": false
+          },
+          {
+            "fieldPath": "testMigration",
+            "columnName": "testMigration",
+            "affinity": "INTEGER",
+            "notNull": true
           }
         ],
         "primaryKey": {
-          "autoGenerate": true,
           "columnNames": [
             "id"
-          ]
+          ],
+          "autoGenerate": true
         },
         "indices": [],
         "foreignKeys": []
       },
       {
-        "tableName": "vodCollect",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `vodId` TEXT, `updateTime` INTEGER NOT NULL, `sourceKey` TEXT, `name` TEXT, `pic` TEXT)",
+        "tableName": "localSource",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`name` TEXT NOT NULL, `api` TEXT NOT NULL, `type` INTEGER NOT NULL DEFAULT 0, `playerUrl` TEXT, PRIMARY KEY(`name`))",
         "fields": [
-          {
-            "fieldPath": "id",
-            "columnName": "id",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "vodId",
-            "columnName": "vodId",
-            "affinity": "TEXT",
-            "notNull": false
-          },
-          {
-            "fieldPath": "updateTime",
-            "columnName": "updateTime",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "sourceKey",
-            "columnName": "sourceKey",
-            "affinity": "TEXT",
-            "notNull": false
-          },
           {
             "fieldPath": "name",
             "columnName": "name",
             "affinity": "TEXT",
-            "notNull": false
-          },
-          {
-            "fieldPath": "pic",
-            "columnName": "pic",
-            "affinity": "TEXT",
-            "notNull": false
-          }
-        ],
-        "primaryKey": {
-          "autoGenerate": true,
-          "columnNames": [
-            "id"
-          ]
-        },
-        "indices": [],
-        "foreignKeys": []
-      },
-      {
-        "tableName": "storageDrive",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT, `type` INTEGER NOT NULL, `configJson` TEXT)",
-        "fields": [
-          {
-            "fieldPath": "id",
-            "columnName": "id",
-            "affinity": "INTEGER",
             "notNull": true
           },
           {
-            "fieldPath": "name",
-            "columnName": "name",
+            "fieldPath": "api",
+            "columnName": "api",
             "affinity": "TEXT",
-            "notNull": false
+            "notNull": true
           },
           {
             "fieldPath": "type",
             "columnName": "type",
             "affinity": "INTEGER",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "0"
           },
           {
-            "fieldPath": "configJson",
-            "columnName": "configJson",
+            "fieldPath": "playerUrl",
+            "columnName": "playerUrl",
             "affinity": "TEXT",
             "notNull": false
           }
         ],
         "primaryKey": {
-          "autoGenerate": true,
           "columnNames": [
-            "id"
-          ]
+            "name"
+          ],
+          "autoGenerate": false
         },
         "indices": [],
         "foreignKeys": []
       },
       {
-        "tableName": "t_search",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `searchKeyWords` TEXT)",
+        "tableName": "sourceState",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sourceKey` TEXT NOT NULL, `home` INTEGER NOT NULL, `active` INTEGER NOT NULL, `tidSort` TEXT, PRIMARY KEY(`sourceKey`))",
         "fields": [
           {
-            "fieldPath": "id",
-            "columnName": "id",
+            "fieldPath": "sourceKey",
+            "columnName": "sourceKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "home",
+            "columnName": "home",
             "affinity": "INTEGER",
             "notNull": true
           },
           {
-            "fieldPath": "searchKeyWords",
-            "columnName": "searchKeyWords",
+            "fieldPath": "active",
+            "columnName": "active",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tidSort",
+            "columnName": "tidSort",
             "affinity": "TEXT",
             "notNull": false
           }
         ],
         "primaryKey": {
-          "autoGenerate": true,
           "columnNames": [
-            "id"
-          ]
+            "sourceKey"
+          ],
+          "autoGenerate": false
         },
-        "indices": [
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "localParse",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`name` TEXT NOT NULL, `url` TEXT NOT NULL, PRIMARY KEY(`name`))",
+        "fields": [
           {
-            "name": "index_t_search_searchKeyWords",
-            "unique": false,
-            "columnNames": [
-              "searchKeyWords"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_t_search_searchKeyWords` ON `${TABLE_NAME}` (`searchKeyWords`)"
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "url",
+            "columnName": "url",
+            "affinity": "TEXT",
+            "notNull": true
           }
         ],
+        "primaryKey": {
+          "columnNames": [
+            "name"
+          ],
+          "autoGenerate": false
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "localLive",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`name` TEXT NOT NULL, `url` TEXT NOT NULL, PRIMARY KEY(`name`))",
+        "fields": [
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "url",
+            "columnName": "url",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "columnNames": [
+            "name"
+          ],
+          "autoGenerate": false
+        },
+        "indices": [],
         "foreignKeys": []
       }
     ],
     "views": [],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'a6da0d26156a50aafc04c72a03ea0f93')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '33b130e0cef69955d9d6fda2087674b0')"
     ]
   }
 }

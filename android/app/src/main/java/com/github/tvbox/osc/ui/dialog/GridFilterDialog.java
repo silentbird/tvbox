@@ -1,17 +1,10 @@
 package com.github.tvbox.osc.ui.dialog;
 
-import android.app.UiModeManager;
 import android.content.Context;
 import android.content.DialogInterface;
-import android.content.res.TypedArray;
-import android.content.pm.PackageManager;
-import android.content.res.Configuration;
-import android.os.Build;
 import android.view.Gravity;
-import android.view.InputDevice;
-import android.view.KeyCharacterMap;
-import android.view.KeyEvent;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -40,15 +33,8 @@ public class GridFilterDialog extends BaseDialog {
         setCancelable(true);
         setContentView(R.layout.dialog_grid_filter);
         filterRoot = findViewById(R.id.filterRoot);
-        if(!isTvOrBox(context)){
-            View rootView = findViewById(R.id.root);
-            rootView.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    dismiss();
-                }
-            });
-        }
+
+        bindOutsideTouchDismiss();
     }
 
     public interface Callback {
@@ -95,11 +81,7 @@ public class GridFilterDialog extends BaseDialog {
                         }
                         TextView val = view.findViewById(R.id.filterValue);
                         val.getPaint().setFakeBoldText(true);
-                        // takagen99: Added Theme Color
-//                        val.setTextColor(getContext().getResources().getColor(R.color.color_theme));
-                        TypedArray a = getContext().obtainStyledAttributes(R.styleable.themeColor);
-                        int themeColor = a.getColor(R.styleable.themeColor_color_theme, 0);
-                        val.setTextColor(themeColor);
+                        val.setTextColor(getContext().getResources().getColor(R.color.color_02F8E1));
                         pre = view;
                     } else {
                         sortData.filterSelect.remove(key);
@@ -124,49 +106,61 @@ public class GridFilterDialog extends BaseDialog {
         layoutParams.gravity = Gravity.BOTTOM;
         layoutParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
         layoutParams.height = ViewGroup.LayoutParams.MATCH_PARENT;
-        // layoutParams.dimAmount = 0f;
+        layoutParams.dimAmount = 0f;
         getWindow().getDecorView().setPadding(0, 0, 0, 0);
         getWindow().setAttributes(layoutParams);
+//        requestFirstFilterFocus();
     }
-    public static boolean isTvOrBox(Context context) {
-        // 1. UiMode 判断
-        UiModeManager uiMode = (UiModeManager) context.getSystemService(Context.UI_MODE_SERVICE);
-        if (uiMode.getCurrentModeType() == Configuration.UI_MODE_TYPE_TELEVISION) {
-            return true;
-        }
-        // 2. Android TV / Leanback 特性判断
-        PackageManager pm = context.getPackageManager();
-        if (pm.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
-                || pm.hasSystemFeature("android.software.leanback_only")   // Strict leanback
-                || pm.hasSystemFeature(PackageManager.FEATURE_TELEVISION)
-                // Amazon Fire TV
-                || pm.hasSystemFeature("amazon.hardware.fire_tv")
-                // Google TV (part of Android TV 家族)
-                || pm.hasSystemFeature("com.google.android.tv")) {
-            return true;
-        }
-        // 3. 没有触摸屏：大多数机顶盒、电视不带触摸
-        if (!pm.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)) {
-            return true;
-        }
-        // 4. 物理遥控器 / D‑pad 键存在判断 兼容一些既有触摸也支持遥控的设备
-        if (KeyCharacterMap.deviceHasKey(KeyEvent.KEYCODE_DPAD_UP)
-                && KeyCharacterMap.deviceHasKey(KeyEvent.KEYCODE_DPAD_DOWN)
-                && KeyCharacterMap.deviceHasKey(KeyEvent.KEYCODE_DPAD_LEFT)
-                && KeyCharacterMap.deviceHasKey(KeyEvent.KEYCODE_DPAD_RIGHT)
-                && KeyCharacterMap.deviceHasKey(KeyEvent.KEYCODE_DPAD_CENTER)) {
-            return true;
-        }
-        // 5. 输入设备源中有 DPAD
-        int[] deviceIds = InputDevice.getDeviceIds();
-        for (int id : deviceIds) {
-            InputDevice dev = InputDevice.getDevice(id);
-            if (dev == null) continue;
-            int sources = dev.getSources();
-            if ((sources & InputDevice.SOURCE_DPAD) == InputDevice.SOURCE_DPAD) {
-                return true;
+
+    private void bindOutsideTouchDismiss() {
+        View rootView = findViewById(R.id.root);
+        rootView.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                if (isTouchInsideFilter(event)) {
+                    return false;
+                }
+                if (event.getAction() == MotionEvent.ACTION_UP) {
+                    dismiss();
+                    return true;
+                }
+                return event.getAction() == MotionEvent.ACTION_DOWN
+                        || event.getAction() == MotionEvent.ACTION_MOVE
+                        || event.getAction() == MotionEvent.ACTION_CANCEL;
+            }
+        });
+    }
+
+    private boolean isTouchInsideFilter(MotionEvent event) {
+        return event.getX() >= filterRoot.getLeft()
+                && event.getX() <= filterRoot.getRight()
+                && event.getY() >= filterRoot.getTop()
+                && event.getY() <= filterRoot.getBottom();
+    }
+
+    private void requestFirstFilterFocus() {
+        filterRoot.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                View target = findFocusableChild(filterRoot);
+                if (target != null) {
+                    target.requestFocus();
+                }
+            }
+        }, 100);
+    }
+
+    private View findFocusableChild(View view) {
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View child = findFocusableChild(group.getChildAt(i));
+                if (child != null) {
+                    return child;
+                }
             }
         }
-        return false;
-    }   
+        return view.isFocusable() ? view : null;
+    }
+
 }

@@ -13,7 +13,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
-import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
@@ -34,7 +33,7 @@ public abstract class BaseController extends BaseVideoController implements Gest
     private boolean mIsGestureEnabled = true;
     private int mStreamVolume;
     private float mBrightness;
-    private int mSeekPosition;
+    private int mSeekPosition = -1;
     private boolean mFirstTouch;
     private boolean mChangePosition;
     private boolean mChangeBrightness;
@@ -67,24 +66,9 @@ public abstract class BaseController extends BaseVideoController implements Gest
                         mSlideInfo.setText(msg.obj.toString());
                         break;
                     }
+
                     case 101: { // 亮度+音量调整 关闭
                         mSlideInfo.setVisibility(GONE);
-                        break;
-                    }
-                    case 201: { // Show Volume Dialog
-                        mDialogVolume.setVisibility(VISIBLE);
-                        break;
-                    }
-                    case 202: { // Hide Volume Dialog
-                        mDialogVolume.setVisibility(GONE);
-                        break;
-                    }
-                    case 203: { // Show Volume Dialog
-                        mDialogBrightness.setVisibility(VISIBLE);
-                        break;
-                    }
-                    case 204: { // Hide Volume Dialog
-                        mDialogBrightness.setVisibility(GONE);
                         break;
                     }
                     default: {
@@ -96,7 +80,6 @@ public abstract class BaseController extends BaseVideoController implements Gest
                 return false;
             }
         });
-        mHandler.post(mRunnable);
     }
 
     public BaseController(@NonNull Context context, @Nullable AttributeSet attrs) {
@@ -109,31 +92,8 @@ public abstract class BaseController extends BaseVideoController implements Gest
 
     private TextView mSlideInfo;
     private ProgressBar mLoading;
-    private ProgressBar mLoadingHide;
     private ViewGroup mPauseRoot;
     private TextView mPauseTime;
-    private TextView mSpeedTextTop;
-    private TextView mSpeedTextTopr;
-    private TextView mSpeedTextHide;
-    private LinearLayout mSpeedTop;
-
-    private LinearLayout mDialogVolume;
-    private LinearLayout mDialogBrightness;
-    private ProgressBar mDialogVolumeProgressBar;
-    private ProgressBar mDialogBrightnessProgressBar;
-    private ProgressBar mDialogVideoProgressBar;
-    private ProgressBar mDialogVideoPauseBar;
-
-    private final Runnable mRunnable = new Runnable() {
-        @Override
-        public void run() {
-            String format = String.format("%.2f", (float) mControlWrapper.getTcpSpeed() / 1024.0 / 1024.0);
-            mSpeedTextTop.setText(format);
-            mSpeedTextTopr.setText(format);
-            mSpeedTextHide.setText(format);
-            mHandler.postDelayed(this, 1000);
-        }
-    };
 
     @Override
     protected void initView() {
@@ -143,30 +103,14 @@ public abstract class BaseController extends BaseVideoController implements Gest
         setOnTouchListener(this);
         mSlideInfo = findViewWithTag("vod_control_slide_info");
         mLoading = findViewWithTag("vod_control_loading");
-        mLoadingHide = findViewWithTag("vod_control_loading_hide");
         mPauseRoot = findViewWithTag("vod_control_pause");
         mPauseTime = findViewWithTag("vod_control_pause_t");
-        mSpeedTextTop = findViewWithTag("play_speed_top");
-        mSpeedTextTopr = findViewWithTag("play_speed_topr");
-        mSpeedTextHide = findViewWithTag("play_speed_top_hide");
-        mSpeedTop = findViewWithTag("top_container_hide");
-
-        mDialogVolume = findViewWithTag("dialog_volume");
-        mDialogBrightness = findViewWithTag("dialog_brightness");
-        mDialogVolumeProgressBar = findViewWithTag("progressbar_volume");
-        mDialogBrightnessProgressBar = findViewWithTag("progressbar_brightness");
-        mDialogVideoProgressBar = findViewWithTag("progressbar_video");
-        mDialogVideoPauseBar = findViewWithTag("pausebar_video");
     }
 
     @Override
     protected void setProgress(int duration, int position) {
         super.setProgress(duration, position);
         mPauseTime.setText(PlayerUtils.stringForTime(position) + " / " + PlayerUtils.stringForTime(duration));
-        // takagen99 : Update mini bar (via touch)
-        int percent = (int) (((double) position / (double) duration) * 100);
-        mDialogVideoProgressBar.setProgress(percent);
-        mDialogVideoPauseBar.setProgress(percent);
     }
 
     @Override
@@ -174,40 +118,31 @@ public abstract class BaseController extends BaseVideoController implements Gest
         super.onPlayStateChanged(playState);
         switch (playState) {
             case VideoView.STATE_IDLE:
+                mPauseRoot.setVisibility(GONE);
                 mLoading.setVisibility(GONE);
-                mLoadingHide.setVisibility(GONE);
-                mSpeedTop.setVisibility(GONE);
                 break;
             case VideoView.STATE_PLAYING:
                 mPauseRoot.setVisibility(GONE);
                 mLoading.setVisibility(GONE);
-                mLoadingHide.setVisibility(GONE);
-                mSpeedTop.setVisibility(GONE);
                 break;
             case VideoView.STATE_PAUSED:
                 mPauseRoot.setVisibility(VISIBLE);
                 mLoading.setVisibility(GONE);
-                mLoadingHide.setVisibility(GONE);
-                mSpeedTop.setVisibility(GONE);
                 break;
             case VideoView.STATE_PREPARED:
             case VideoView.STATE_ERROR:
             case VideoView.STATE_BUFFERED:
+                mPauseRoot.setVisibility(GONE);
                 mLoading.setVisibility(GONE);
-                mLoadingHide.setVisibility(GONE);
-                mSpeedTop.setVisibility(GONE);
                 break;
             case VideoView.STATE_PREPARING:
             case VideoView.STATE_BUFFERING:
+                mPauseRoot.setVisibility(GONE);
                 mLoading.setVisibility(VISIBLE);
-                mLoadingHide.setVisibility(VISIBLE);
-                mSpeedTop.setVisibility(VISIBLE);
                 break;
             case VideoView.STATE_PLAYBACK_COMPLETED:
                 mLoading.setVisibility(GONE);
-                mLoadingHide.setVisibility(GONE);
                 mPauseRoot.setVisibility(GONE);
-                mSpeedTop.setVisibility(GONE);
                 break;
         }
     }
@@ -240,6 +175,18 @@ public abstract class BaseController extends BaseVideoController implements Gest
         mIsDoubleTapTogglePlayEnabled = enabled;
     }
 
+    public void hidePauseRoot() {
+        if (mPauseRoot != null) {
+            mPauseRoot.setVisibility(GONE);
+        }
+    }
+
+    public void showPauseRoot() {
+        if (mPauseRoot != null) {
+            mPauseRoot.setVisibility(VISIBLE);
+        }
+    }
+
     @Override
     public void setPlayerState(int playerState) {
         super.setPlayerState(playerState);
@@ -264,6 +211,14 @@ public abstract class BaseController extends BaseVideoController implements Gest
                 && mCurPlayState != VideoView.STATE_PREPARED
                 && mCurPlayState != VideoView.STATE_START_ABORT
                 && mCurPlayState != VideoView.STATE_PLAYBACK_COMPLETED;
+    }
+
+    protected boolean canHandleGesture(MotionEvent event) {
+        return isInPlaybackState()
+                && mIsGestureEnabled
+                && mCanSlide
+                && !isLocked()
+                && !PlayerUtils.isEdge(getContext(), event);
     }
 
     @Override
@@ -319,12 +274,7 @@ public abstract class BaseController extends BaseVideoController implements Gest
      */
     @Override
     public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
-        if (!isInPlaybackState() //不处于播放状态
-                || !mIsGestureEnabled //关闭了手势
-                || !mCanSlide //关闭了滑动手势
-                || isLocked() //锁住了屏幕
-                || PlayerUtils.isEdge(getContext(), e1)) //处于屏幕边沿
-            return true;
+        if (!canHandleGesture(e1)) return true;
         float deltaX = e1.getX() - e2.getX();
         float deltaY = e1.getY() - e2.getY();
         if (mFirstTouch) {
@@ -367,8 +317,8 @@ public abstract class BaseController extends BaseVideoController implements Gest
     protected void slideToChangePosition(float deltaX) {
         deltaX = -deltaX;
         int width = getMeasuredWidth();
-        int duration = (int) mControlWrapper.getDuration();
-        int currentPosition = (int) mControlWrapper.getCurrentPosition();
+        int duration = PlayerUtils.safeTimeMs(mControlWrapper.getDuration());
+        int currentPosition = PlayerUtils.safeTimeMs(mControlWrapper.getCurrentPosition());
         int position = (int) (deltaX / width * 120000 + currentPosition);
         if (position > duration) position = duration;
         if (position < 0) position = 0;
@@ -392,18 +342,12 @@ public abstract class BaseController extends BaseVideoController implements Gest
         Window window = activity.getWindow();
         WindowManager.LayoutParams attributes = window.getAttributes();
         int height = getMeasuredHeight();
-//        if (mBrightness == -1.0f) mBrightness = 0.5f;
-        if (mBrightness <= 0.00f) {
-            mBrightness = 0.50f;
-        } else if (mBrightness < 0.01f) {
-            mBrightness = 0.01f;
-        }
+        if (mBrightness == -1.0f) mBrightness = 0.5f;
         float brightness = deltaY * 2 / height * 1.0f + mBrightness;
-        if (brightness > 1.0f) {
-            brightness = 1.0f;
-        } else if (brightness < 0.01f) {
-            brightness = 0.01f;
+        if (brightness < 0) {
+            brightness = 0f;
         }
+        if (brightness > 1.0f) brightness = 1.0f;
         int percent = (int) (brightness * 100);
         attributes.screenBrightness = brightness;
         window.setAttributes(attributes);
@@ -413,13 +357,12 @@ public abstract class BaseController extends BaseVideoController implements Gest
                 ((IGestureComponent) component).onBrightnessChange(percent);
             }
         }
-        mDialogBrightnessProgressBar.setProgress(percent);
         Message msg = Message.obtain();
-        msg.what = 203;
-        msg.obj = "亮度 " + percent + "%";
+        msg.what = 100;
+        msg.obj = "亮度" + percent + "%";
         mHandler.sendMessage(msg);
-        mHandler.removeMessages(204);
-        mHandler.sendEmptyMessageDelayed(204, 600);
+        mHandler.removeMessages(101);
+        mHandler.sendEmptyMessageDelayed(101, 1000);
     }
 
     protected void slideToChangeVolume(float deltaY) {
@@ -437,13 +380,12 @@ public abstract class BaseController extends BaseVideoController implements Gest
                 ((IGestureComponent) component).onVolumeChange(percent);
             }
         }
-        mDialogVolumeProgressBar.setProgress(percent);
         Message msg = Message.obtain();
-        msg.what = 201;
-        msg.obj = "音量 " + percent + "%";
+        msg.what = 100;
+        msg.obj = "音量" + percent + "%";
         mHandler.sendMessage(msg);
-        mHandler.removeMessages(202);
-        mHandler.sendEmptyMessageDelayed(202, 600);
+        mHandler.removeMessages(101);
+        mHandler.sendEmptyMessageDelayed(101, 1000);
     }
 
     @Override
@@ -454,14 +396,14 @@ public abstract class BaseController extends BaseVideoController implements Gest
             switch (action) {
                 case MotionEvent.ACTION_UP:
                     stopSlide();
-                    if (mSeekPosition > 0) {
+                    if (mSeekPosition >= 0) {
                         mControlWrapper.seekTo(mSeekPosition);
-                        mSeekPosition = 0;
+                        mSeekPosition = -1;
                     }
                     break;
                 case MotionEvent.ACTION_CANCEL:
                     stopSlide();
-                    mSeekPosition = 0;
+                    mSeekPosition = -1;
                     break;
             }
         }

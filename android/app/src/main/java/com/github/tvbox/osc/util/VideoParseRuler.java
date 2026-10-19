@@ -1,6 +1,7 @@
 package com.github.tvbox.osc.util;
 
 import static com.github.tvbox.osc.util.RegexUtils.getPattern;
+
 import android.net.Uri;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -14,15 +15,15 @@ public class VideoParseRuler {
     private static final HashMap<String, ArrayList<ArrayList<String>>> HOSTS_FILTER = new HashMap<>();
     private static final HashMap<String, ArrayList<String>> HOSTS_REGEX = new HashMap<>();
     private static final HashMap<String, ArrayList<String>> HOSTS_SCRIPT = new HashMap<>();
+
     public static void clearRule() {
         HOSTS_RULE.clear();
         HOSTS_FILTER.clear();
         HOSTS_REGEX.clear();
-        HOSTS_SCRIPT.clear();   
+        HOSTS_SCRIPT.clear();
     }
 
     public static void addHostRule(String host, ArrayList<String> rule) {
-        if (rule == null || rule.size() == 0) return;
         ArrayList<ArrayList<String>> rules = new ArrayList<>();
         if (HOSTS_RULE.get(host) != null && HOSTS_RULE.get(host).size() > 0) {
             rules = HOSTS_RULE.get(host);
@@ -98,7 +99,7 @@ public class VideoParseRuler {
                             checkIsVideo = false;
                             break;
                         }
-                        LOG.i("VIDEO RULE:" + hostRules.get(i).get(j));
+                        LOG.i("echo-VIDEO RULE:" + hostRules.get(i).get(j));
                     }
                 } else {
                     checkIsVideo = false;
@@ -145,7 +146,7 @@ public class VideoParseRuler {
                             checkIsFilter = false;
                             break;
                         }
-                        LOG.i("FILTER RULE:" + hostFilters.get(i).get(j));
+                        LOG.i("echo-FILTER RULE:" + hostFilters.get(i).get(j));
                     }
                 } else {
                     checkIsFilter = false;
@@ -161,7 +162,7 @@ public class VideoParseRuler {
         }
         return isFilter;
     }
- 
+
     public static void addHostScript(String host, ArrayList<String> script) {
         if (script == null || script.size() == 0) return;
         ArrayList<String> temp = new ArrayList<>();

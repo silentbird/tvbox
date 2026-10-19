@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.text.TextUtils;
+import android.util.Log;
 
 import com.github.tvbox.osc.base.App;
 import com.github.tvbox.osc.bean.Movie;
@@ -474,11 +475,14 @@ public class Thunder {
     }
 
     public static String getPlayUrl(){
-        if(currentTask != 0L){
-            if(isNetworkDownloadTask(task_url)){
-                return XLTaskHelper.instance().getLoclUrl(localPath + name);
-            }
+            if(currentTask != 0L){
+                if(isNetworkDownloadTask(task_url)){
+                    return XLTaskHelper.instance().getLoclUrl(localPath + name);
+                }
         }
         return null;
     }
+
+
+
 }

@@ -246,13 +246,21 @@ public abstract class BaseLazyFragment extends Fragment implements CustomAdapt {
     protected abstract void init();
 
     protected void setLoadSir(View view) {
-        //    if (mLoadService == null) {
+        if (mLoadService == null) {
+            mLoadService = LoadSir.getDefault().register(view, new Callback.OnReloadListener() {
+                @Override
+                public void onReload(View v) {
+                }
+            });
+        }
+    }
+
+    protected void setLoadSir2(View view) {
         mLoadService = LoadSir.getDefault().register(view, new Callback.OnReloadListener() {
             @Override
             public void onReload(View v) {
             }
         });
-        //    }
     }
 
     protected void showLoading() {
@@ -278,11 +286,6 @@ public abstract class BaseLazyFragment extends Fragment implements CustomAdapt {
         startActivity(intent);
     }
 
-    /**
-     * 跳转页面.
-     * @param clazz
-     * @param bundle
-     */
     public void jumpActivity(Class<? extends BaseActivity> clazz, Bundle bundle) {
         Intent intent = new Intent(mContext, clazz);
         intent.putExtras(bundle);
