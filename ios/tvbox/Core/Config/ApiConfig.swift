@@ -39,6 +39,7 @@ class ApiConfig: ObservableObject {
     }
     
     private init() {
+        migrateLegacyConfigCache()
         loadDefaultAds()
     }
     
@@ -198,10 +199,10 @@ class ApiConfig: ObservableObject {
     func clearCache() {
         let url = apiUrl
         if !url.isEmpty {
-            let cacheKey = "\(Keys.cachedConfig)_\(url.md5)"
-            userDefaults.removeObject(forKey: cacheKey)
+            let cacheFile = configCacheFile(forHash: url.md5)
+            try? FileManager.default.removeItem(at: cacheFile)
             userDefaults.removeObject(forKey: Keys.websiteBundleSiteMetas)
-            AppLogger.debug("[ApiConfig] 已清除缓存: \(cacheKey)")
+            AppLogger.debug("[ApiConfig] 已清除缓存: \(cacheFile.lastPathComponent)")
         }
     }
     
@@ -1520,13 +1521,40 @@ class ApiConfig: ObservableObject {
     }
     
     private func getCachedConfig(for url: String) -> String? {
-        let cacheKey = "\(Keys.cachedConfig)_\(url.md5)"
-        return userDefaults.string(forKey: cacheKey)
+        try? String(contentsOf: configCacheFile(forHash: url.md5), encoding: .utf8)
     }
-    
+
     private func cacheConfig(_ config: String, for url: String) {
-        let cacheKey = "\(Keys.cachedConfig)_\(url.md5)"
-        userDefaults.set(config, forKey: cacheKey)
+        writeConfigCache(config, forHash: url.md5)
+    }
+
+    /// 配置包有几 MB，UserDefaults 超过 4MB 后整个偏好文件都写不进去，所以缓存放在 Caches 目录的文件里
+    private func configCacheFile(forHash hash: String) -> URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(Bundle.main.bundleIdentifier ?? "tvbox", isDirectory: true)
+            .appendingPathComponent("config", isDirectory: true)
+            .appendingPathComponent("\(hash).txt")
+    }
+
+    private func writeConfigCache(_ config: String, forHash hash: String) {
+        let file = configCacheFile(forHash: hash)
+        do {
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try config.write(to: file, atomically: true, encoding: .utf8)
+        } catch {
+            AppLogger.debug("[ApiConfig] 配置缓存写入失败: \(error.localizedDescription)")
+        }
+    }
+
+    /// 旧版本把配置缓存存在 UserDefaults 里，搬到文件并从偏好里删掉
+    private func migrateLegacyConfigCache() {
+        let prefix = "\(Keys.cachedConfig)_"
+        for (key, value) in userDefaults.dictionaryRepresentation() where key.hasPrefix(prefix) {
+            if let config = value as? String {
+                writeConfigCache(config, forHash: String(key.dropFirst(prefix.count)))
+            }
+            userDefaults.removeObject(forKey: key)
+        }
     }
 }
 

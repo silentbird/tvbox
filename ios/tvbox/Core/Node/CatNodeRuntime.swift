@@ -155,8 +155,13 @@ actor CatNodeRuntime {
 
         let configFile = directory.appendingPathComponent("index.config.js")
         if let configURL = Self.configURL(forScriptUrl: scriptUrl) {
+            var request = URLRequest(url: configURL)
+            // 已有上次下载的配置时只等一小会，服务器连不上也不至于卡住启动
+            if FileManager.default.fileExists(atPath: configFile.path) {
+                request.timeoutInterval = 5
+            }
             do {
-                let (data, response) = try await session.data(from: configURL)
+                let (data, response) = try await session.data(for: request)
                 if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200, !data.isEmpty {
                     try data.write(to: configFile, options: .atomic)
                     return directory

@@ -4,8 +4,7 @@ struct DetailView: View {
     let movie: MovieItem
     @StateObject private var viewModel = DetailViewModel()
     @State private var selectedSourceIndex = 0
-    @State private var showPlayer = false
-    @State private var selectedEpisodeIndex: Int?
+    @State private var playRequest: PlayRequest?
     @Environment(\.tvboxWideLayout) private var isWideLayout
 
     var body: some View {
@@ -98,9 +97,10 @@ struct DetailView: View {
                     .background(Color.black.opacity(0.2))
             }
         }
-        .tvboxFullScreenCover(isPresented: $showPlayer) {
-            if let episodeIndex = selectedEpisodeIndex, let vodInfo = viewModel.vodInfo {
-                let sourceIndex = selectedSourceIndex
+        .tvboxFullScreenCover(item: $playRequest) { request in
+            if let vodInfo = viewModel.vodInfo {
+                let sourceIndex = request.sourceIndex
+                let episodeIndex = request.episodeIndex
                 let flag = vodInfo.playFlags.indices.contains(sourceIndex) ? vodInfo.playFlags[sourceIndex] : ""
                 PlayerView(
                     vodInfo: vodInfo,
@@ -216,8 +216,7 @@ struct DetailView: View {
                selectedSourceIndex < vodInfo.playUrls.count,
                !vodInfo.playUrls[selectedSourceIndex].isEmpty {
                 Button(action: {
-                    selectedEpisodeIndex = viewModel.playIndex(sourceIndex: selectedSourceIndex)
-                    showPlayer = true
+                    play(episodeIndex: viewModel.playIndex(sourceIndex: selectedSourceIndex))
                 }) {
                     Label("播放", systemImage: "play.fill")
                 }
@@ -336,8 +335,7 @@ struct DetailView: View {
                     
                     if !episodes.isEmpty {
                         Button(action: {
-                            selectedEpisodeIndex = playIndex
-                            showPlayer = true
+                            play(episodeIndex: playIndex)
                         }) {
                             Label("立即播放", systemImage: "play.fill")
                                 .font(.subheadline)
@@ -357,8 +355,7 @@ struct DetailView: View {
                     ForEach(Array(episodes.enumerated()), id: \.element.id) { index, episode in
                         let isPlayIndex = index == playIndex
                         Button(action: {
-                            selectedEpisodeIndex = index
-                            showPlayer = true
+                            play(episodeIndex: index)
                         }) {
                             Text(episode.name)
                                 .font(.caption)
@@ -389,6 +386,17 @@ struct DetailView: View {
             .background(color.opacity(0.8))
             .cornerRadius(4)
     }
+
+    private func play(episodeIndex: Int) {
+        playRequest = PlayRequest(sourceIndex: selectedSourceIndex, episodeIndex: episodeIndex)
+    }
+}
+
+/// 点击播放时选中的线路和剧集
+private struct PlayRequest: Identifiable {
+    let id = UUID()
+    let sourceIndex: Int
+    let episodeIndex: Int
 }
 
 // MARK: - Detail ViewModel

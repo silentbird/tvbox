@@ -16,7 +16,7 @@ struct PlayerView: View {
     /// 播放进度回调 (剧集索引, 位置, 总时长)，用于记录播放历史
     let onProgress: @MainActor (Int, Double, Double) -> Void
     
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.tvboxDismissCover) private var dismiss
     @StateObject private var viewModel = PlayerViewModel()
     @State private var showControls = true
     @State private var hideControlsTask: Task<Void, Never>?

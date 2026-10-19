@@ -35,6 +35,7 @@ struct MainView: View {
             isWideLayout = isWide
         }
         .environment(\.tvboxWideLayout, isWideLayout)
+        .tvboxWindowCoverHost()
         .sheet(isPresented: $showConfigSheet) {
             ConfigSetupView {
                 AppLogger.debug("[MainView] ConfigSetupView onComplete 被调用，开始加载配置")
@@ -191,8 +192,24 @@ extension MainView {
             if apiConfig.isLoading {
                 ProgressView("加载配置中...")
             } else {
+                if let error = apiConfig.error {
+                    VStack(spacing: 12) {
+                        Text("配置加载失败：\(AppErrorMessage.userMessage(for: error))")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 40)
+
+                        Button("重试") {
+                            Task {
+                                try? await apiConfig.loadConfig()
+                            }
+                        }
+                    }
+                }
+
                 Button(action: { showConfigSheet = true }) {
-                    Text("配置数据源")
+                    Text(apiConfig.error == nil ? "配置数据源" : "更换配置")
                         .fontWeight(.semibold)
                         .frame(maxWidth: .infinity)
                         .padding()

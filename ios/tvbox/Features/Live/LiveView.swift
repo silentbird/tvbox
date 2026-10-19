@@ -5,7 +5,7 @@ struct LiveView: View {
     @StateObject private var viewModel = LiveViewModel()
     @State private var selectedGroupIndex = 0
     @State private var selectedChannel: LiveChannelItem?
-    @State private var showPlayer = false
+    @State private var playingChannel: LiveChannelItem?
     
     var body: some View {
         GeometryReader { geometry in
@@ -31,10 +31,8 @@ struct LiveView: View {
                 }
             }
         }
-        .tvboxFullScreenCover(isPresented: $showPlayer) {
-            if let channel = selectedChannel {
-                LivePlayerView(channel: channel)
-            }
+        .tvboxFullScreenCover(item: $playingChannel) { channel in
+            LivePlayerView(channel: channel)
         }
         .onAppear {
             viewModel.loadChannels()
@@ -93,7 +91,7 @@ struct LiveView: View {
                         )
                         .onTapGesture {
                             selectedChannel = channel
-                            showPlayer = true
+                            playingChannel = channel
                         }
                     }
                 }
@@ -196,7 +194,7 @@ struct ChannelRow: View {
 struct LivePlayerView: View {
     let channel: LiveChannelItem
     
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.tvboxDismissCover) private var dismiss
     @StateObject private var viewModel = LivePlayerViewModel()
     @State private var showControls = true
     @State private var currentSourceIndex = 0

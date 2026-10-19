@@ -41,6 +41,18 @@ extension View {
         #endif
     }
 
+    /// macOS 表单里的 Button 默认画成带底色的按钮，整行点击的设置项要和其它行一样平
+    @ViewBuilder
+    func tvboxFormRowButtonStyle() -> some View {
+        #if os(macOS)
+        self
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
+        #else
+        self
+        #endif
+    }
+
     @ViewBuilder
     func tvboxUrlTextInputStyle() -> some View {
         #if os(iOS) && !targetEnvironment(macCatalyst)
@@ -61,21 +73,33 @@ extension View {
         #endif
     }
 
+    /// 用 item 而不是 isPresented：弹出内容直接拿到点击时的参数，不会读到还没更新的 @State 而显示空白
+    /// 弹出的页面用 `@Environment(\.tvboxDismissCover)` 关闭自己
     @ViewBuilder
-    func tvboxFullScreenCover<Content: View>(
-        isPresented: Binding<Bool>,
-        @ViewBuilder content: @escaping () -> Content
+    func tvboxFullScreenCover<Item: Identifiable, Content: View>(
+        item: Binding<Item?>,
+        @ViewBuilder content: @escaping (Item) -> Content
     ) -> some View {
         #if os(iOS) && !targetEnvironment(macCatalyst)
-        self.fullScreenCover(isPresented: isPresented, content: content)
-        #elseif os(macOS)
-        // macOS 的 sheet 按内容尺寸显示，播放器内容没有固有尺寸，不指定会缩成一个小方块
-        self.sheet(isPresented: isPresented) {
-            content()
-                .frame(minWidth: 800, idealWidth: 1024, minHeight: 450, idealHeight: 576)
+        self.fullScreenCover(item: item) { value in
+            content(value).environment(\.tvboxDismissCover) { item.wrappedValue = nil }
         }
+        #elseif os(macOS)
+        self.modifier(WindowCoverPresenter(item: item, coverContent: content))
         #else
-        self.sheet(isPresented: isPresented, content: content)
+        self.sheet(item: item) { value in
+            content(value).environment(\.tvboxDismissCover) { item.wrappedValue = nil }
+        }
+        #endif
+    }
+
+    /// 给 tvboxFullScreenCover 提供窗口级覆盖层，挂在窗口根视图上
+    @ViewBuilder
+    func tvboxWindowCoverHost() -> some View {
+        #if os(macOS)
+        self.modifier(WindowCoverHost())
+        #else
+        self
         #endif
     }
 
@@ -106,3 +130,51 @@ extension ToolbarItemPlacement {
         #endif
     }
 }
+
+extension EnvironmentValues {
+    /// 关闭 tvboxFullScreenCover 弹出的页面。macOS 的窗口覆盖层不是系统弹出，系统的 dismiss 关不掉它
+    @Entry var tvboxDismissCover: () -> Void = {}
+}
+
+#if os(macOS)
+/// macOS 没有 fullScreenCover，sheet 只是窗口中间的一块面板。
+/// Android 全屏播放占满整个界面，这里由窗口根视图的覆盖层盖住整个窗口（含侧边栏）
+@MainActor
+final class TVBoxWindowCover: ObservableObject {
+    @Published var content: AnyView?
+}
+
+extension EnvironmentValues {
+    @Entry var tvboxWindowCover: TVBoxWindowCover? = nil
+}
+
+private struct WindowCoverHost: ViewModifier {
+    @StateObject private var windowCover = TVBoxWindowCover()
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.tvboxWindowCover, windowCover)
+            .overlay {
+                if let cover = windowCover.content {
+                    cover.ignoresSafeArea()
+                }
+            }
+            // 标题栏的工具条（返回、侧边栏按钮）会浮在覆盖层上面，盖住时一起隐藏
+            .toolbar(windowCover.content == nil ? .automatic : .hidden, for: .windowToolbar)
+    }
+}
+
+private struct WindowCoverPresenter<Item: Identifiable, CoverContent: View>: ViewModifier {
+    @Binding var item: Item?
+    let coverContent: (Item) -> CoverContent
+    @Environment(\.tvboxWindowCover) private var windowCover
+
+    func body(content: Content) -> some View {
+        content.onChange(of: item?.id) { _, _ in
+            windowCover?.content = item.map { value in
+                AnyView(coverContent(value).environment(\.tvboxDismissCover) { item = nil })
+            }
+        }
+    }
+}
+#endif

@@ -11,19 +11,22 @@ struct SettingsView: View {
     @State private var showClearCacheAlert = false
     
     var body: some View {
-        List {
+        Form {
             // 配置管理
             configSection
-            
+
             // 播放设置
             playbackSection
-            
+
             // 数据管理
             dataSection
-            
+
             // 关于
             aboutSection
         }
+        // macOS 的 List 里 Toggle 是复选框、Button 带底色，换成系统设置那样的分组表单
+        .formStyle(.grouped)
+        .toggleStyle(.switch)
         .navigationTitle("设置")
         .sheet(isPresented: $showApiInput) {
             ApiInputView(
@@ -85,6 +88,7 @@ struct SettingsView: View {
                 }
             }
             .foregroundColor(.primary)
+            .tvboxFormRowButtonStyle()
             
             // 直播地址
             Button(action: { showLiveApiInput = true }) {
@@ -99,6 +103,7 @@ struct SettingsView: View {
                 }
             }
             .foregroundColor(.primary)
+            .tvboxFormRowButtonStyle()
             
             // 当前站点
             Button(action: { showSiteSelector = true }) {
@@ -113,6 +118,7 @@ struct SettingsView: View {
                 }
             }
             .foregroundColor(.primary)
+            .tvboxFormRowButtonStyle()
             
             // 默认解析
             Button(action: { showParseSelector = true }) {
@@ -127,6 +133,7 @@ struct SettingsView: View {
                 }
             }
             .foregroundColor(.primary)
+            .tvboxFormRowButtonStyle()
             
             // 刷新配置
             Button(action: { viewModel.refreshConfig() }) {
@@ -140,6 +147,7 @@ struct SettingsView: View {
                 }
             }
             .foregroundColor(.primary)
+            .tvboxFormRowButtonStyle()
             .disabled(viewModel.isRefreshing)
 
             // 配置中心（Node 运行的配置包自带网页）
@@ -221,6 +229,7 @@ struct SettingsView: View {
                 }
             }
             .foregroundColor(.primary)
+            .tvboxFormRowButtonStyle()
         } header: {
             Text("数据管理")
         }
@@ -241,6 +250,7 @@ struct SettingsView: View {
                 }
             }
             .foregroundColor(.primary)
+            .tvboxFormRowButtonStyle()
         }
     }
 }
