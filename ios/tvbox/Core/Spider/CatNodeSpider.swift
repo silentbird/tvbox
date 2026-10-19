@@ -87,6 +87,9 @@ final class CatNodeSpider: Spider {
         do {
             return try await runtime.request(path: "\(apiPath)/\(method)", json: body)
         } catch let error as CatNodeError {
+            if case .httpStatus(_, _, let body) = error, let message = Self.bundleMessage(from: body) {
+                throw SpiderError.message(message)
+            }
             throw SpiderError.scriptError(error.localizedDescription)
         } catch {
             throw SpiderError.networkError(error)
@@ -118,5 +121,18 @@ final class CatNodeSpider: Spider {
         if let number = value as? NSNumber { return number.intValue }
         if let string = value as? String { return Int(string) }
         return nil
+    }
+
+    /// 配置包主动给出的提示（如 "还没有配置夸克 Cookie"）只有 message；
+    /// 带 code 的是请求站点出错（如 ENOTFOUND），仍按脚本错误处理。
+    private static func bundleMessage(from body: String) -> String? {
+        guard let data = body.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              object["code"] == nil,
+              let message = object["message"] as? String,
+              !message.isEmpty else {
+            return nil
+        }
+        return message
     }
 }

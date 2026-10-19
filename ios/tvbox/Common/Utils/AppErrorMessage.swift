@@ -81,6 +81,8 @@ enum AppErrorMessage {
             return "站点脚本执行失败，请尝试其他站点"
         case .unsupported(let feature):
             return "当前站点暂不支持：\(feature)"
+        case .message(let message):
+            return message
         }
     }
     

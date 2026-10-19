@@ -147,6 +147,8 @@ enum SpiderError: LocalizedError {
     case parseError(String)
     case scriptError(String)
     case unsupported(String)
+    /// 站点给出的提示（如未登录网盘），原样展示，对应 Android playerContent 返回的 msg
+    case message(String)
     
     var errorDescription: String? {
         switch self {
@@ -162,6 +164,8 @@ enum SpiderError: LocalizedError {
             return "脚本错误: \(message)"
         case .unsupported(let feature):
             return "不支持的功能: \(feature)"
+        case .message(let message):
+            return message
         }
     }
 }
