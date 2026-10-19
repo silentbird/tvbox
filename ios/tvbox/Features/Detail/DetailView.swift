@@ -6,7 +6,8 @@ struct DetailView: View {
     @State private var selectedSourceIndex = 0
     @State private var showPlayer = false
     @State private var selectedEpisodeIndex: Int?
-    
+    @Environment(\.tvboxWideLayout) private var isWideLayout
+
     var body: some View {
         Group {
             if movie.vodId.hasPrefix("msearch:") {
@@ -60,12 +61,16 @@ struct DetailView: View {
     private var detailContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                // 顶部封面区域
-                headerSection
-                
-                // 信息区域
-                infoSection
-                
+                if isWideLayout {
+                    wideHeaderSection
+                } else {
+                    // 顶部封面区域
+                    headerSection
+
+                    // 信息区域
+                    infoSection
+                }
+
                 // 播放源和剧集
                 if let vodInfo = viewModel.vodInfo {
                     playSourceSection(vodInfo: vodInfo)
@@ -75,10 +80,13 @@ struct DetailView: View {
         .background(Color.tvboxSystemGroupedBackground)
         .tvboxInlineNavigationBarTitle()
         .toolbar {
-            ToolbarItem(placement: .tvboxNavigationBarTrailing) {
-                Button(action: { viewModel.toggleCollect() }) {
-                    Image(systemName: viewModel.isCollected ? "heart.fill" : "heart")
-                        .foregroundColor(viewModel.isCollected ? .red : .primary)
+            // 宽布局的收藏按钮在信息区的按钮行里
+            if !isWideLayout {
+                ToolbarItem(placement: .tvboxNavigationBarTrailing) {
+                    Button(action: { viewModel.toggleCollect() }) {
+                        Image(systemName: viewModel.isCollected ? "heart.fill" : "heart")
+                            .foregroundColor(viewModel.isCollected ? .red : .primary)
+                    }
                 }
             }
         }
@@ -164,8 +172,80 @@ struct DetailView: View {
         }
     }
     
+    // MARK: - Wide Header Section
+    // 对应 Android activity_detail: 左边海报，右边信息和按钮行
+    private var wideHeaderSection: some View {
+        HStack(alignment: .top, spacing: 20) {
+            CachedAsyncImage(urlString: posterURL)
+                .id(posterURL)
+                .frame(width: 200, height: 280)
+                .clipped()
+                .cornerRadius(10)
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    Text(movie.vodName)
+                        .font(.title)
+                        .fontWeight(.bold)
+                        .lineLimit(2)
+
+                    if let remarks = movie.vodRemarks, !remarks.isEmpty {
+                        tagView(text: remarks, color: .blue)
+                    }
+                }
+
+                infoRows
+
+                Spacer(minLength: 0)
+
+                wideActionRow
+            }
+            .frame(maxWidth: .infinity, minHeight: 280, alignment: .topLeading)
+        }
+        .padding()
+        .background(Color.tvboxSystemBackground)
+    }
+
+    private var posterURL: String? {
+        [viewModel.vodInfo?.vodPic, movie.vodPic].compactMap { $0 }.first { !$0.isEmpty }
+    }
+
+    private var wideActionRow: some View {
+        HStack(spacing: 12) {
+            if let vodInfo = viewModel.vodInfo,
+               selectedSourceIndex < vodInfo.playUrls.count,
+               !vodInfo.playUrls[selectedSourceIndex].isEmpty {
+                Button(action: {
+                    selectedEpisodeIndex = viewModel.playIndex(sourceIndex: selectedSourceIndex)
+                    showPlayer = true
+                }) {
+                    Label("播放", systemImage: "play.fill")
+                }
+                .buttonStyle(.borderedProminent)
+            }
+
+            NavigationLink(destination: FastSearchView(keyword: movie.vodName)) {
+                Label("快搜", systemImage: "magnifyingglass")
+            }
+            .buttonStyle(.bordered)
+
+            Button(action: { viewModel.toggleCollect() }) {
+                Label(viewModel.isCollected ? "已收藏" : "收藏", systemImage: viewModel.isCollected ? "heart.fill" : "heart")
+            }
+            .buttonStyle(.bordered)
+            .tint(viewModel.isCollected ? .red : nil)
+        }
+        .controlSize(.large)
+    }
+
     // MARK: - Info Section
     private var infoSection: some View {
+        infoRows
+            .padding()
+            .background(Color.tvboxSystemBackground)
+    }
+
+    private var infoRows: some View {
         VStack(alignment: .leading, spacing: 12) {
             // 标签行
             HStack(spacing: 12) {
@@ -216,8 +296,6 @@ struct DetailView: View {
                 .padding(.top, 8)
             }
         }
-        .padding()
-        .background(Color.tvboxSystemBackground)
     }
     
     // MARK: - Play Source Section
@@ -238,6 +316,7 @@ struct DetailView: View {
                                     .background(selectedSourceIndex == index ? Color.blue : Color.tvboxSystemGray5)
                                     .cornerRadius(8)
                             }
+                            .buttonStyle(.plain)
                         }
                     }
                     .padding(.horizontal)
@@ -274,7 +353,7 @@ struct DetailView: View {
                 }
                 .padding(.horizontal)
                 
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 70), spacing: 8)], spacing: 8) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: isWideLayout ? 120 : 70), spacing: 8)], spacing: 8) {
                     ForEach(Array(episodes.enumerated()), id: \.element.id) { index, episode in
                         let isPlayIndex = index == playIndex
                         Button(action: {
@@ -290,6 +369,7 @@ struct DetailView: View {
                                 .foregroundColor(isPlayIndex ? .white : .primary)
                                 .cornerRadius(6)
                         }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal)
