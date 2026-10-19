@@ -8,21 +8,33 @@ private class MainViewCounter {
 struct MainView: View {
     @ObservedObject private var apiConfig = ApiConfig.shared
     @State private var selectedTab = 0
+    @State private var sidebarSelection: SidebarItem? = .home
+    @State private var isWideLayout = false
     @State private var showConfigSheet = false
-    
+
     var body: some View {
         let _ = {
             MainViewCounter.count += 1
             AppLogger.debug("[MainView] body #\(MainViewCounter.count)")
         }()
-        
+
         Group {
             if apiConfig.configLoaded {
-                mainTabView
+                if isWideLayout {
+                    mainSidebarView
+                } else {
+                    mainTabView
+                }
             } else {
                 welcomeView
             }
         }
+        .onGeometryChange(for: Bool.self) { proxy in
+            TVBoxLayout.isWide(width: proxy.size.width)
+        } action: { isWide in
+            isWideLayout = isWide
+        }
+        .environment(\.tvboxWideLayout, isWideLayout)
         .sheet(isPresented: $showConfigSheet) {
             ConfigSetupView {
                 AppLogger.debug("[MainView] ConfigSetupView onComplete 被调用，开始加载配置")
@@ -82,6 +94,76 @@ struct MainView: View {
             NavigationStack {
                 MineView()
             }
+        }
+    }
+
+    // MARK: - Sidebar View
+    // 宽窗口下对应 Android 首页「我的」那排入口，用侧边栏代替底部 Tab
+    private var mainSidebarView: some View {
+        NavigationSplitView {
+            List(SidebarItem.allCases, id: \.self, selection: $sidebarSelection) { item in
+                Label(item.title, systemImage: item.systemImage)
+            }
+            .navigationTitle("TVBox")
+            .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 220)
+        } detail: {
+            sidebarContent
+        }
+    }
+
+    @ViewBuilder
+    private var sidebarContent: some View {
+        switch sidebarSelection ?? .home {
+        case .home:
+            NavigationStack {
+                HomeContentView()
+            }
+        case .live:
+            NavigationStack {
+                LiveView()
+            }
+        case .search:
+            NavigationStack {
+                SearchView()
+            }
+        case .history:
+            NavigationStack {
+                HistoryView()
+            }
+        case .collect:
+            NavigationStack {
+                CollectView()
+            }
+        case .settings:
+            NavigationStack {
+                SettingsView()
+            }
+        }
+    }
+}
+
+private enum SidebarItem: Hashable, CaseIterable {
+    case home, live, search, history, collect, settings
+
+    var title: String {
+        switch self {
+        case .home: return "首页"
+        case .live: return "直播"
+        case .search: return "搜索"
+        case .history: return "观看历史"
+        case .collect: return "我的收藏"
+        case .settings: return "设置"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .home: return "house"
+        case .live: return "play.tv"
+        case .search: return "magnifyingglass"
+        case .history: return "clock.arrow.circlepath"
+        case .collect: return "heart"
+        case .settings: return "gear"
         }
     }
 }
