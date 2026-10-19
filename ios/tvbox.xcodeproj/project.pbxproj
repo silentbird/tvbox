@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		5A0D0E012F00000000000002 /* NodeMobile.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5A0D0E012F00000000000001 /* NodeMobile.xcframework */; platformFilters = (ios, ); };
 		5A0D0E012F00000000000003 /* NodeMobile.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 5A0D0E012F00000000000001 /* NodeMobile.xcframework */; platformFilters = (ios, ); settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		5A0D0E012F00000000000006 /* node in Embed Node */ = {isa = PBXBuildFile; fileRef = 5A0D0E012F00000000000005 /* node */; platformFilters = (maccatalyst, ); settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -23,11 +24,23 @@
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		5A0D0E012F00000000000007 /* Embed Node */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 6;
+			files = (
+				5A0D0E012F00000000000006 /* node in Embed Node */,
+			);
+			name = "Embed Node";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		04B74ED32D9DB54A006D111D /* tvbox.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = tvbox.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		5A0D0E012F00000000000001 /* NodeMobile.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = NodeMobile.xcframework; path = Vendor/NodeMobile.xcframework; sourceTree = "<group>"; };
+		5A0D0E012F00000000000005 /* node */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = node; path = "Vendor/node-macos/node"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -68,6 +81,7 @@
 			children = (
 				04B74ED52D9DB54A006D111D /* tvbox */,
 				5A0D0E012F00000000000001 /* NodeMobile.xcframework */,
+				5A0D0E012F00000000000005 /* node */,
 				04B74ED42D9DB54A006D111D /* Products */,
 			);
 			sourceTree = "<group>";
@@ -91,6 +105,7 @@
 				04B74ED02D9DB54A006D111D /* Frameworks */,
 				04B74ED12D9DB54A006D111D /* Resources */,
 				5A0D0E012F00000000000004 /* Embed Frameworks */,
+				5A0D0E012F00000000000007 /* Embed Node */,
 			);
 			buildRules = (
 			);

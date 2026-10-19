@@ -1,5 +1,6 @@
-// Cat 配置包宿主脚本，由 CatNodeRuntime 通过 nodejs-mobile 启动。
-// 用法: node catnode-bootstrap.js <dataDir>
+// Cat 配置包宿主脚本，由 CatNodeRuntime 启动：iOS 通过 nodejs-mobile 在 App 进程内运行，
+// Mac Catalyst 以子进程运行 App 包里的 node。
+// 用法: node catnode-bootstrap.js <dataDir> [parentPid]
 //
 // 1. 在 127.0.0.1 随机端口启动控制服务，端口写入 <dataDir>/control.port。
 // 2. POST /run {"path": "<目录>"}：停止旧配置包，require <目录>/index.js 并以
@@ -27,6 +28,18 @@ const dataDir = process.argv[2] || process.cwd();
 // 配置包把网盘 Cookie/Token 等数据写到 $NODE_PATH/db.json。
 process.env.NODE_PATH = dataDir;
 process.chdir(dataDir);
+
+// 以子进程运行时，App 退出后跟着退出，避免残留进程占用配置包端口。
+const parentPid = Number(process.argv[3]);
+if (parentPid > 0) {
+  setInterval(() => {
+    try {
+      process.kill(parentPid, 0);
+    } catch (e) {
+      process.exit(0);
+    }
+  }, 2000).unref();
+}
 
 let sourceModule = null;
 let serverPort = 0;

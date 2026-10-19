@@ -97,7 +97,9 @@
 - [x] 内嵌 nodejs-mobile 运行 Cat 配置包（`CatNodeRuntime` + `CatNodeSpider`），站点列表读配置包 `/config`，配置中心用 `/website`；Catalyst 回退原生适配。
 - [x] 模拟器用真实配置包（`https://9280.kstore.vip/cat/index.js.md5`）验证：96 个站点，豆瓣首页/分类、多站搜索、详情、直连站播放地址正常。
 - [ ] 界面上点通详情 → 播放，以及设置 → 配置中心里扫码登录夸克后的网盘播放；真机再验证一遍。
-- [ ] Node 宿主：App 回到前台时检查配置包服务存活，必要时重新加载。
+- [x] Mac Catalyst 以子进程运行 App 包内的官方 node（`scripts/fetch-node-macos.sh`），与 iOS 共用宿主脚本和 `CatNodeSpider`。
+- [ ] Node 宿主：App 回到前台时检查配置包服务存活，必要时重新加载；Mac 上 node 子进程意外退出后重新拉起。
+- [ ] Mac 上架前：开启 App Sandbox 后验证 node 子进程（继承沙盒）；Intel Mac 需要 x86_64 版 node。
 - [x] WebsiteBundleNativeSpider - `wexDuBoKu`
 - [x] WebsiteBundleNativeSpider - `wexYueYue`、`animemodu`、`dongli`、`duanjuweiguan`、`hanxiaoquan`、`bookWuWei`、`bili`（mp4 flag）
 - [x] 配置中心运行时读取层 `ConfigCenterRuntime`，供原生 spider 在 `playerContent` 阶段读取 Cookie/Token/账号。

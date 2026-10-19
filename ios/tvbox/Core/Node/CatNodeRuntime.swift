@@ -5,20 +5,31 @@ import NodeMobile
 
 /// Cat 配置包的 Node 宿主 - 对应 MiraPlay 的 NodeRunner。
 ///
-/// 通过 nodejs-mobile 启动 `catnode-bootstrap.js`，再由它 `require` 配置包的
+/// 启动 `catnode-bootstrap.js`（iOS 用 nodejs-mobile 在进程内运行，Mac Catalyst 以子进程
+/// 运行 App 包里的官方 node），再由它 `require` 配置包的
 /// `index.js` / `index.config.js`。配置包自己在本机起 HTTP 服务，站点、网盘、
 /// 配置中心都通过这个服务访问，iOS 侧不再逐个重写站点逻辑。
 actor CatNodeRuntime {
     static let shared = CatNodeRuntime()
 
-    /// 当前平台是否带有 Node 运行时。NodeMobile 只提供 iOS 设备和模拟器切片，Mac Catalyst 没有。
+    /// 当前平台是否带有 Node 运行时。NodeMobile 只提供 iOS 设备和模拟器切片，
+    /// Mac Catalyst 使用 `scripts/fetch-node-macos.sh` 下载并打包进 App 的 node。
     static var isSupported: Bool {
         #if canImport(NodeMobile)
         return true
+        #elseif targetEnvironment(macCatalyst)
+        return nodeExecutableURL.map { FileManager.default.isExecutableFile(atPath: $0.path) } ?? false
         #else
         return false
         #endif
     }
+
+    #if targetEnvironment(macCatalyst)
+    /// App 包 `Contents/MacOS/node`。
+    private static var nodeExecutableURL: URL? {
+        Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("node")
+    }
+    #endif
 
     private var engineStarted = false
     private var controlPort = 0
@@ -31,9 +42,19 @@ actor CatNodeRuntime {
         return URLSession(configuration: configuration)
     }()
 
-    private let dataDirectory: URL = FileManager.default
-        .urls(for: .documentDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("catnode", isDirectory: true)
+    private let dataDirectory: URL = {
+        #if targetEnvironment(macCatalyst)
+        // Catalyst 未开沙盒，Documents 是用户的 ~/Documents，改放到 Application Support 下。
+        return FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(Bundle.main.bundleIdentifier ?? "tvbox", isDirectory: true)
+            .appendingPathComponent("catnode", isDirectory: true)
+        #else
+        return FileManager.default
+            .urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("catnode", isDirectory: true)
+        #endif
+    }()
 
     private init() {}
 
@@ -87,13 +108,13 @@ actor CatNodeRuntime {
 
         let portFile = dataDirectory.appendingPathComponent("control.port")
         if !engineStarted {
-            #if canImport(NodeMobile)
             guard let bootstrapPath = Bundle.main.path(forResource: "catnode-bootstrap", ofType: "js") else {
                 throw CatNodeError.bootstrapMissing
             }
             try FileManager.default.createDirectory(at: dataDirectory, withIntermediateDirectories: true)
             try? FileManager.default.removeItem(at: portFile)
 
+            #if canImport(NodeMobile)
             // nodejs-mobile 每个进程只能启动一次，之后切换配置包都走控制服务。
             let arguments = ["node", bootstrapPath, dataDirectory.path]
             let thread = Thread {
@@ -102,10 +123,15 @@ actor CatNodeRuntime {
             thread.name = "nodejs"
             thread.stackSize = 2 * 1024 * 1024
             thread.start()
-            engineStarted = true
+            #elseif targetEnvironment(macCatalyst)
+            guard let nodePath = Self.nodeExecutableURL?.path else {
+                throw CatNodeError.unsupported
+            }
+            try NodeProcess.spawn(arguments: [nodePath, bootstrapPath, dataDirectory.path, String(getpid())])
             #else
             throw CatNodeError.unsupported
             #endif
+            engineStarted = true
         }
 
         for _ in 0..<150 {
@@ -176,6 +202,7 @@ actor CatNodeRuntime {
 enum CatNodeError: LocalizedError {
     case unsupported
     case bootstrapMissing
+    case spawnFailed(Int32)
     case startTimeout
     case notRunning
     case bundleFailed(String)
@@ -187,6 +214,8 @@ enum CatNodeError: LocalizedError {
             return "当前平台没有 Node 运行时"
         case .bootstrapMissing:
             return "缺少 catnode-bootstrap.js"
+        case .spawnFailed(let code):
+            return "Node 进程启动失败: \(String(cString: strerror(code)))"
         case .startTimeout:
             return "Node 运行时启动超时"
         case .notRunning:
@@ -215,6 +244,23 @@ private enum NodeEngine {
         }
         let code = node_start(Int32(argv.count), &argv)
         AppLogger.debug("[CatNodeRuntime] Node 已退出，code: \(code)")
+    }
+}
+#endif
+
+#if targetEnvironment(macCatalyst)
+private enum NodeProcess {
+    /// 以子进程运行 node，标准输出/错误继承自 App，日志会出现在 Xcode 控制台。
+    static func spawn(arguments: [String]) throws {
+        var argv = arguments.map { strdup($0) } + [nil]
+        defer { argv.forEach { free($0) } }
+
+        var pid: pid_t = 0
+        let code = posix_spawn(&pid, arguments[0], nil, nil, &argv, environ)
+        guard code == 0 else {
+            throw CatNodeError.spawnFailed(code)
+        }
+        AppLogger.debug("[CatNodeRuntime] Node 子进程已启动，pid: \(pid)")
     }
 }
 #endif
