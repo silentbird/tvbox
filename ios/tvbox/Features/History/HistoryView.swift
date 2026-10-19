@@ -3,7 +3,8 @@ import SwiftUI
 struct HistoryView: View {
     @StateObject private var viewModel = HistoryViewModel()
     @State private var showClearAlert = false
-    
+    @Environment(\.tvboxWideLayout) private var isWideLayout
+
     var body: some View {
         Group {
             if viewModel.historyItems.isEmpty {
@@ -12,6 +13,8 @@ struct HistoryView: View {
                     systemImage: "clock.arrow.circlepath",
                     description: Text("您观看的影视将会显示在这里")
                 )
+            } else if isWideLayout {
+                historyGrid
             } else {
                 historyList
             }
@@ -61,7 +64,42 @@ struct HistoryView: View {
         }
         .tvboxInsetGroupedListStyle()
     }
-    
+
+    // 宽布局对应 Android activity_history 的多列网格；鼠标没法左滑，删除放右键菜单
+    private var historyGrid: some View {
+        ScrollView {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 320), spacing: 12)], alignment: .leading, spacing: 12) {
+                ForEach(groupedHistory, id: \.key) { dateString, items in
+                    Section {
+                        ForEach(items) { item in
+                            NavigationLink(destination: destination(for: item)) {
+                                HistoryRow(item: item)
+                                    .padding(10)
+                                    .background(Color.tvboxSystemBackground)
+                                    .cornerRadius(10)
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    viewModel.removeHistory(item)
+                                } label: {
+                                    Label("删除", systemImage: "trash")
+                                }
+                            }
+                        }
+                    } header: {
+                        Text(dateString)
+                            .font(.headline)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 8)
+                    }
+                }
+            }
+            .padding()
+        }
+        .background(Color.tvboxSystemGroupedBackground)
+    }
+
     /// 和 Android 一样：站点还在就进详情，否则按片名快速搜索
     @ViewBuilder
     private func destination(for item: StorageManager.VodHistoryItem) -> some View {

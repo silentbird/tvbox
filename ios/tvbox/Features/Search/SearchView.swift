@@ -3,40 +3,75 @@ import SwiftUI
 struct SearchView: View {
     @StateObject private var viewModel = SearchViewModel()
     @FocusState private var isSearchFocused: Bool
-    
+    @Environment(\.tvboxWideLayout) private var isWideLayout
+
     var body: some View {
-        VStack(spacing: 0) {
-            // 搜索栏
-            searchBar
-            
-            // 内容区域
-            if viewModel.isLoading {
-                Spacer()
-                ProgressView("搜索中...")
-                Spacer()
-            } else if let error = viewModel.error {
-                Spacer()
-                ContentUnavailableView(
-                    "搜索失败",
-                    systemImage: "exclamationmark.magnifyingglass",
-                    description: Text(AppErrorMessage.userMessage(for: error))
-                )
-                Spacer()
-            } else if viewModel.searchText.isEmpty {
-                historySection
-            } else if viewModel.results.isEmpty && !viewModel.searchText.isEmpty {
-                ContentUnavailableView(
-                    "未找到结果",
-                    systemImage: "magnifyingglass",
-                    description: Text("尝试使用其他关键词搜索")
-                )
+        Group {
+            if isWideLayout {
+                // 对应 Android activity_search: 左栏搜索框和热词，右边结果
+                HStack(spacing: 0) {
+                    VStack(spacing: 0) {
+                        searchBar
+                        historySection
+                    }
+                    .frame(width: 320)
+
+                    Divider()
+
+                    VStack(spacing: 0) {
+                        searchContent
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             } else {
-                resultsList
+                VStack(spacing: 0) {
+                    // 搜索栏
+                    searchBar
+
+                    // 内容区域
+                    searchContent
+                }
             }
         }
         .background(Color.tvboxSystemGroupedBackground)
         .navigationTitle("搜索")
         .tvboxInlineNavigationBarTitle()
+    }
+
+    @ViewBuilder
+    private var searchContent: some View {
+        if viewModel.isLoading {
+            Spacer()
+            ProgressView("搜索中...")
+            Spacer()
+        } else if let error = viewModel.error {
+            Spacer()
+            ContentUnavailableView(
+                "搜索失败",
+                systemImage: "exclamationmark.magnifyingglass",
+                description: Text(AppErrorMessage.userMessage(for: error))
+            )
+            Spacer()
+        } else if viewModel.searchText.isEmpty {
+            if isWideLayout {
+                // 宽布局的历史和热词已经在左栏
+                ContentUnavailableView(
+                    "搜索影视",
+                    systemImage: "magnifyingglass",
+                    description: Text("在左侧输入片名，或点击历史和热门搜索")
+                )
+            } else {
+                historySection
+            }
+        } else if viewModel.results.isEmpty && !viewModel.searchText.isEmpty {
+            ContentUnavailableView(
+                "未找到结果",
+                systemImage: "magnifyingglass",
+                description: Text("尝试使用其他关键词搜索")
+            )
+        } else {
+            resultsList
+        }
     }
     
     // MARK: - Search Bar
@@ -111,6 +146,7 @@ struct SearchView: View {
                                         .background(Color.tvboxSystemGray5)
                                         .cornerRadius(16)
                                 }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -139,6 +175,7 @@ struct SearchView: View {
                                         .background(Color.tvboxSystemGray5)
                                         .cornerRadius(16)
                                 }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -154,11 +191,13 @@ struct SearchView: View {
     // MARK: - Results List
     private var resultsList: some View {
         ScrollView {
-            LazyVStack(spacing: 12) {
+            // 宽布局按 Android 那样排成多列
+            LazyVGrid(columns: [isWideLayout ? GridItem(.adaptive(minimum: 320), spacing: 12) : GridItem(.flexible())], spacing: 12) {
                 ForEach(viewModel.results) { movie in
                     NavigationLink(destination: DetailView(movie: movie)) {
                         SearchResultRow(movie: movie)
                     }
+                    .buttonStyle(.plain)
                 }
             }
             .padding()

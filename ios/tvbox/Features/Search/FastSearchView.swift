@@ -7,27 +7,29 @@ struct FastSearchView: View {
     @StateObject private var viewModel = FastSearchViewModel()
     /// 选中的站点 key，nil 表示 "全部"
     @State private var selectedSiteKey: String?
+    @Environment(\.tvboxWideLayout) private var isWideLayout
 
     private var results: [MovieItem] {
         viewModel.results(forSite: selectedSiteKey)
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            siteBar
+        Group {
+            if isWideLayout {
+                // 对应 Android activity_fast_search: 左栏站点列表，右边结果
+                HStack(spacing: 0) {
+                    siteList
+                        .frame(width: 220)
 
-            ScrollView {
-                if results.isEmpty {
-                    emptyState
-                } else {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 12)], spacing: 12) {
-                        ForEach(results) { movie in
-                            NavigationLink(destination: DetailView(movie: movie)) {
-                                MovieCard(movie: movie, subtitle: selectedSiteKey == nil ? viewModel.siteName(for: movie) : nil)
-                            }
-                        }
-                    }
-                    .padding()
+                    Divider()
+
+                    resultsGrid
+                }
+            } else {
+                VStack(spacing: 0) {
+                    siteBar
+
+                    resultsGrid
                 }
             }
         }
@@ -37,6 +39,44 @@ struct FastSearchView: View {
         .onAppear {
             viewModel.searchIfNeeded(keyword: keyword)
         }
+    }
+
+    private var resultsGrid: some View {
+        ScrollView {
+            if results.isEmpty {
+                emptyState
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 12)], spacing: 12) {
+                    ForEach(results) { movie in
+                        NavigationLink(destination: DetailView(movie: movie)) {
+                            MovieCard(movie: movie, subtitle: selectedSiteKey == nil ? viewModel.siteName(for: movie) : nil)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding()
+            }
+        }
+    }
+
+    // MARK: - Site List
+    private var siteList: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(viewModel.statusText)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 4)
+
+                siteChip(title: "全部", siteKey: nil)
+                ForEach(viewModel.resultSites) { site in
+                    siteChip(title: site.name, siteKey: site.key)
+                }
+            }
+            .padding(10)
+        }
+        .background(Color.tvboxSystemBackground)
     }
 
     // MARK: - Site Bar
@@ -68,10 +108,14 @@ struct FastSearchView: View {
                 .font(.subheadline)
                 .fontWeight(isSelected ? .semibold : .regular)
                 .foregroundColor(isSelected ? .white : .primary)
+                .lineLimit(1)
+                // 宽布局在左栏里竖排，占满整行
+                .frame(maxWidth: isWideLayout ? .infinity : nil, alignment: .leading)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 6)
-                .background(isSelected ? Color.blue : Color.tvboxSystemGray5)
+                .background(isSelected ? Color.blue : (isWideLayout ? Color.clear : Color.tvboxSystemGray5))
                 .cornerRadius(8)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
