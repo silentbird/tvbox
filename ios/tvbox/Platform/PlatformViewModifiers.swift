@@ -68,6 +68,12 @@ extension View {
     ) -> some View {
         #if os(iOS) && !targetEnvironment(macCatalyst)
         self.fullScreenCover(isPresented: isPresented, content: content)
+        #elseif os(macOS)
+        // macOS 的 sheet 按内容尺寸显示，播放器内容没有固有尺寸，不指定会缩成一个小方块
+        self.sheet(isPresented: isPresented) {
+            content()
+                .frame(minWidth: 800, idealWidth: 1024, minHeight: 450, idealHeight: 576)
+        }
         #else
         self.sheet(isPresented: isPresented, content: content)
         #endif

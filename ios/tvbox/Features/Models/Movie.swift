@@ -69,7 +69,8 @@ struct MovieFilterValue: Decodable, Hashable {
 
 /// 影视项 - 对应 Android 的 Movie.Video
 struct MovieItem: Decodable, Identifiable, Hashable {
-    var id: String { vodId }
+    /// 聚合搜索结果来自不同站点，vodId 可能重复，带上来源站点区分
+    var id: String { sourceKey.map { "\($0)|\(vodId)" } ?? vodId }
     
     let vodId: String
     let vodName: String
@@ -84,6 +85,8 @@ struct MovieItem: Decodable, Identifiable, Hashable {
     let vodPlayUrl: String?
     let vodTag: String?
     let typeName: String?
+    /// 来源站点 key，对应 Android 的 Movie.Video.sourceKey；为空时表示当前站点
+    var sourceKey: String?
     
     enum CodingKeys: String, CodingKey {
         case vodId = "vod_id"
@@ -129,7 +132,7 @@ struct MovieItem: Decodable, Identifiable, Hashable {
     init(vodId: String, vodName: String, vodPic: String? = nil, vodRemarks: String? = nil,
          vodYear: String? = nil, vodArea: String? = nil, vodActor: String? = nil,
          vodDirector: String? = nil, vodContent: String? = nil, vodPlayFrom: String? = nil,
-         vodPlayUrl: String? = nil, vodTag: String? = nil, typeName: String? = nil) {
+         vodPlayUrl: String? = nil, vodTag: String? = nil, typeName: String? = nil, sourceKey: String? = nil) {
         self.vodId = vodId
         self.vodName = vodName
         self.vodPic = vodPic
@@ -143,6 +146,7 @@ struct MovieItem: Decodable, Identifiable, Hashable {
         self.vodPlayUrl = vodPlayUrl
         self.vodTag = vodTag
         self.typeName = typeName
+        self.sourceKey = sourceKey
     }
 }
 

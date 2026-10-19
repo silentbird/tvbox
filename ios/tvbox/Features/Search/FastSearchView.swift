@@ -1,0 +1,256 @@
+import SwiftUI
+
+/// 快速搜索 - 对应 Android 的 FastSearchActivity。
+/// 按片名并发搜索所有可搜索站点，"全部" 展示精确匹配的结果，也可以按站点查看。
+struct FastSearchView: View {
+    let keyword: String
+    @StateObject private var viewModel = FastSearchViewModel()
+    /// 选中的站点 key，nil 表示 "全部"
+    @State private var selectedSiteKey: String?
+
+    private var results: [MovieItem] {
+        viewModel.results(forSite: selectedSiteKey)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            siteBar
+
+            ScrollView {
+                if results.isEmpty {
+                    emptyState
+                } else {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 12)], spacing: 12) {
+                        ForEach(results) { movie in
+                            NavigationLink(destination: DetailView(movie: movie)) {
+                                MovieCard(movie: movie, subtitle: selectedSiteKey == nil ? viewModel.siteName(for: movie) : nil)
+                            }
+                        }
+                    }
+                    .padding()
+                }
+            }
+        }
+        .background(Color.tvboxSystemGroupedBackground)
+        .navigationTitle(keyword)
+        .tvboxInlineNavigationBarTitle()
+        .onAppear {
+            viewModel.searchIfNeeded(keyword: keyword)
+        }
+    }
+
+    // MARK: - Site Bar
+    private var siteBar: some View {
+        HStack(spacing: 12) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    siteChip(title: "全部", siteKey: nil)
+                    ForEach(viewModel.resultSites) { site in
+                        siteChip(title: site.name, siteKey: site.key)
+                    }
+                }
+            }
+
+            Text(viewModel.statusText)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize()
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+        .background(Color.tvboxSystemBackground)
+    }
+
+    private func siteChip(title: String, siteKey: String?) -> some View {
+        let isSelected = selectedSiteKey == siteKey
+        return Button(action: { selectedSiteKey = siteKey }) {
+            Text(title)
+                .font(.subheadline)
+                .fontWeight(isSelected ? .semibold : .regular)
+                .foregroundColor(isSelected ? .white : .primary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .background(isSelected ? Color.blue : Color.tvboxSystemGray5)
+                .cornerRadius(8)
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var emptyState: some View {
+        if viewModel.isSearching {
+            ProgressView("搜索中...")
+                .padding(.top, 80)
+        } else if selectedSiteKey == nil && !viewModel.resultSites.isEmpty {
+            ContentUnavailableView(
+                "没有完全匹配的结果",
+                systemImage: "magnifyingglass",
+                description: Text("可以切换到上方站点查看相关结果")
+            )
+        } else {
+            ContentUnavailableView(
+                "未找到结果",
+                systemImage: "magnifyingglass",
+                description: Text("没有站点搜到「\(keyword)」")
+            )
+        }
+    }
+}
+
+// MARK: - Fast Search ViewModel
+@MainActor
+final class FastSearchViewModel: ObservableObject {
+    /// 同时搜索的站点数，对应 Android SEARCH_THREAD_COUNT
+    private static let concurrentSiteCount = 6
+    /// 单站点超时，对应 Android SEARCH_SITE_TIMEOUT_SECONDS
+    private static let siteTimeoutSeconds: UInt64 = 15
+
+    /// 有结果的站点，按返回先后排列
+    @Published private(set) var resultSites: [SiteBean] = []
+    /// "全部" 展示的结果
+    @Published private(set) var mainResults: [MovieItem] = []
+    @Published private(set) var finishedCount = 0
+    @Published private(set) var totalCount = 0
+
+    private var keyword = ""
+    private var resultsBySite: [String: [MovieItem]] = [:]
+    private var highMatchResults: [MovieItem] = []
+    /// 一直没有精确匹配时，改为展示以片名开头的结果
+    private var showsHighMatch = false
+    private var searchTask: Task<Void, Never>?
+
+    var isSearching: Bool { finishedCount < totalCount }
+
+    var statusText: String {
+        isSearching ? "搜索中 \(finishedCount)/\(totalCount)" : "\(resultSites.count) 个站点有结果"
+    }
+
+    deinit {
+        searchTask?.cancel()
+    }
+
+    func results(forSite siteKey: String?) -> [MovieItem] {
+        guard let siteKey else { return mainResults }
+        return resultsBySite[siteKey] ?? []
+    }
+
+    func siteName(for movie: MovieItem) -> String? {
+        resultSites.first { $0.key == movie.sourceKey }?.name
+    }
+
+    /// 从详情页返回时 onAppear 会再次触发，只搜索一次
+    func searchIfNeeded(keyword: String) {
+        guard searchTask == nil else { return }
+        self.keyword = keyword
+
+        // 和 Android 一样把当前站点排在最前面
+        let apiConfig = ApiConfig.shared
+        var sites = apiConfig.searchableSites
+        if let homeKey = apiConfig.currentSite?.key, let index = sites.firstIndex(where: { $0.key == homeKey }) {
+            sites.insert(sites.remove(at: index), at: 0)
+        }
+        totalCount = sites.count
+
+        searchTask = Task { [weak self] in
+            await withTaskGroup(of: (SiteBean, [MovieItem]).self) { group in
+                var pending = sites[...]
+                for _ in 0..<Self.concurrentSiteCount {
+                    guard let site = pending.popFirst() else { break }
+                    group.addTask { (site, await Self.search(site: site, keyword: keyword)) }
+                }
+
+                for await (site, items) in group {
+                    guard let self else {
+                        group.cancelAll()
+                        return
+                    }
+                    self.receive(items, from: site)
+                    if let site = pending.popFirst() {
+                        group.addTask { (site, await Self.search(site: site, keyword: keyword)) }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Private Methods
+
+    private func receive(_ items: [MovieItem], from site: SiteBean) {
+        finishedCount += 1
+
+        let matched = items
+            .filter { matches($0.vodName) }
+            .map { item -> MovieItem in
+                var item = item
+                item.sourceKey = site.key
+                return item
+            }
+        guard !matched.isEmpty else {
+            showHighMatchIfNeeded()
+            return
+        }
+
+        resultsBySite[site.key] = matched
+        resultSites.append(site)
+
+        let highMatched = matched.filter { isHighMatch($0.vodName) }
+        highMatchResults.append(contentsOf: highMatched)
+
+        if showsHighMatch {
+            mainResults.append(contentsOf: highMatched)
+        } else {
+            let exactMatched = matched.filter { $0.vodName.trimmingCharacters(in: .whitespaces) == keyword.trimmingCharacters(in: .whitespaces) }
+            if exactMatched.isEmpty {
+                showHighMatchIfNeeded()
+            } else {
+                mainResults.append(contentsOf: exactMatched)
+            }
+        }
+    }
+
+    /// 前一批站点都没搜到精确匹配时，"全部" 改为展示以片名开头的结果
+    private func showHighMatchIfNeeded() {
+        guard !showsHighMatch, mainResults.isEmpty,
+              finishedCount >= min(Self.concurrentSiteCount, totalCount) else { return }
+        showsHighMatch = true
+        mainResults = highMatchResults
+    }
+
+    /// 片名需包含关键词按空格拆开后的每一段
+    private func matches(_ name: String) -> Bool {
+        let words = keyword.split(whereSeparator: \.isWhitespace)
+        return !words.isEmpty && words.allSatisfy { name.contains($0) }
+    }
+
+    private func isHighMatch(_ name: String) -> Bool {
+        let compactName = name.filter { !$0.isWhitespace }
+        let compactKeyword = keyword.filter { !$0.isWhitespace }
+        return !compactKeyword.isEmpty && compactName.hasPrefix(compactKeyword)
+    }
+
+    /// 搜索单个站点，失败或超时返回空结果
+    private nonisolated static func search(site: SiteBean, keyword: String) async -> [MovieItem] {
+        await withTaskGroup(of: [MovieItem]?.self) { group in
+            group.addTask {
+                do {
+                    let spider = try await SpiderManager.shared.getSpider(for: site)
+                    return try await spider.searchContent(keyword: keyword, quick: false, page: 1)
+                } catch {
+                    AppLogger.debug("[FastSearch] \(site.name) 搜索失败: \(error)")
+                    return []
+                }
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: siteTimeoutSeconds * 1_000_000_000)
+                return nil
+            }
+
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            if first == nil {
+                AppLogger.debug("[FastSearch] \(site.name) 搜索超时")
+            }
+            return first ?? []
+        }
+    }
+}

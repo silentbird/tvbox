@@ -130,8 +130,8 @@ extension SpiderManager {
     }
     
     /// 获取详情
-    func detailContent(ids: [String]) async throws -> [VodInfo] {
-        let spider = try await getCurrentSpider()
+    func detailContent(site: SiteBean, ids: [String]) async throws -> [VodInfo] {
+        let spider = try await getSpider(for: site)
         return try await spider.detailContent(ids: ids)
     }
     
@@ -142,8 +142,8 @@ extension SpiderManager {
     }
     
     /// 获取播放地址
-    func playerContent(flag: String, id: String) async throws -> PlayerContent {
-        let spider = try await getCurrentSpider()
+    func playerContent(site: SiteBean, flag: String, id: String) async throws -> PlayerContent {
+        let spider = try await getSpider(for: site)
         let vipFlags = apiConfig.vipParseFlags
         return try await spider.playerContent(flag: flag, id: id, vipFlags: vipFlags)
     }

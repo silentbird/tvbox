@@ -44,20 +44,32 @@ struct HistoryView: View {
         List {
             ForEach(groupedHistory, id: \.key) { dateString, items in
                 Section(header: Text(dateString)) {
-                    ForEach(items, id: \.vodId) { item in
-                        HistoryRow(item: item)
-                            .swipeActions(edge: .trailing) {
-                                Button(role: .destructive) {
-                                    viewModel.removeHistory(item)
-                                } label: {
-                                    Label("删除", systemImage: "trash")
-                                }
+                    ForEach(items) { item in
+                        NavigationLink(destination: destination(for: item)) {
+                            HistoryRow(item: item)
+                        }
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                viewModel.removeHistory(item)
+                            } label: {
+                                Label("删除", systemImage: "trash")
                             }
+                        }
                     }
                 }
             }
         }
         .tvboxInsetGroupedListStyle()
+    }
+    
+    /// 和 Android 一样：站点还在就进详情，否则按片名快速搜索
+    @ViewBuilder
+    private func destination(for item: StorageManager.VodHistoryItem) -> some View {
+        if ApiConfig.shared.sites.contains(where: { $0.key == item.siteKey }) {
+            DetailView(movie: MovieItem(vodId: item.vodId, vodName: item.vodName, vodPic: item.vodPic, sourceKey: item.siteKey))
+        } else {
+            FastSearchView(keyword: item.vodName)
+        }
     }
     
     private var groupedHistory: [(key: String, value: [StorageManager.VodHistoryItem])] {
@@ -118,7 +130,7 @@ struct HistoryRow: View {
                 
                 // 播放进度
                 HStack(spacing: 4) {
-                    Text("看到第\(item.episodeIndex + 1)集")
+                    Text("看到\(item.episodeName ?? "第\(item.episodeIndex + 1)集")")
                         .font(.caption)
                         .foregroundColor(.secondary)
                     

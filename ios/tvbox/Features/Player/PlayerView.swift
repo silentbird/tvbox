@@ -1,10 +1,20 @@
 import SwiftUI
 import AVKit
 
+/// 剧集的真实播放地址
+typealias PlayAddress = (url: URL, headers: [String: String]?, format: String?)
+
 struct PlayerView: View {
     let vodInfo: VodInfo
     let sourceIndex: Int
-    let episode: VodInfo.VodPlayItem
+    /// 开始播放的剧集
+    let episodeIndex: Int
+    /// 开始播放的位置 (秒)，用于续播
+    let startPosition: Double
+    /// 向站点获取剧集的真实播放地址（需要解析时一并解析）
+    let resolvePlayUrl: (VodInfo.VodPlayItem) async throws -> PlayAddress
+    /// 播放进度回调 (剧集索引, 位置, 总时长)，用于记录播放历史
+    let onProgress: @MainActor (Int, Double, Double) -> Void
     
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel = PlayerViewModel()
@@ -27,7 +37,7 @@ struct PlayerView: View {
                             }
                             scheduleHideControls()
                         }
-                } else {
+                } else if viewModel.error == nil {
                     ProgressView()
                         .scaleEffect(2)
                         .tint(.white)
@@ -66,8 +76,15 @@ struct PlayerView: View {
             }
         }
         .tvboxStatusBar(hidden: true)
+        .toast(message: viewModel.toastMessage, isShowing: $viewModel.showToast)
         .onAppear {
-            viewModel.loadVideo(url: episode.url)
+            viewModel.start(
+                episodes: sourceIndex < vodInfo.playUrls.count ? vodInfo.playUrls[sourceIndex] : [],
+                episodeIndex: episodeIndex,
+                startPosition: startPosition,
+                resolve: resolvePlayUrl,
+                onProgress: onProgress
+            )
             scheduleHideControls()
         }
         .onDisappear {
@@ -129,7 +146,7 @@ struct PlayerView: View {
                     .foregroundColor(.white)
                     .lineLimit(1)
                 
-                Text(episode.name)
+                Text(viewModel.currentEpisode?.name ?? "")
                     .font(.subheadline)
                     .foregroundColor(.white.opacity(0.8))
             }
@@ -185,7 +202,7 @@ struct PlayerView: View {
             // 控制按钮
             HStack(spacing: 40) {
                 // 上一集
-                Button(action: { /* TODO */ }) {
+                Button(action: { viewModel.playPrevious() }) {
                     Image(systemName: "backward.end.fill")
                         .font(.title2)
                         .foregroundColor(.white)
@@ -215,7 +232,7 @@ struct PlayerView: View {
                 }
                 
                 // 下一集
-                Button(action: { /* TODO */ }) {
+                Button(action: { viewModel.playNext() }) {
                     Image(systemName: "forward.end.fill")
                         .font(.title2)
                         .foregroundColor(.white)
@@ -250,8 +267,25 @@ class PlayerViewModel: ObservableObject {
     @Published var duration: TimeInterval = 0
     @Published var error: Error?
     
+    @Published private(set) var episodeIndex = 0
+    @Published var showToast = false
+    @Published private(set) var toastMessage = ""
+    
     private var timeObserver: Any?
     private var statusObserver: NSKeyValueObservation?
+    private var endObserver: NSObjectProtocol?
+    private var resolveTask: Task<Void, Never>?
+    
+    private var episodes: [VodInfo.VodPlayItem] = []
+    private var resolve: ((VodInfo.VodPlayItem) async throws -> PlayAddress)?
+    private var onProgress: (@MainActor (Int, Double, Double) -> Void)?
+    /// 准备好后需要跳转到的位置 (续播)
+    private var pendingSeekPosition: Double = 0
+    private var lastReportedTime: TimeInterval = 0
+    /// 当前剧集已播完，进度按 0 记录 (和 Android 一样播完清除进度)
+    private var didPlayToEnd = false
+    /// 播放进度上报间隔 (秒)
+    private static let progressReportInterval: TimeInterval = 5
     
     var currentTimeString: String {
         formatTime(currentTime)
@@ -261,29 +295,106 @@ class PlayerViewModel: ObservableObject {
         formatTime(duration)
     }
     
-    func loadVideo(url: String) {
-        // 处理 URL
-        let videoUrl = url
-        
-        // 如果是相对路径或需要解析的 URL，这里需要处理
-        guard let url = URL(string: videoUrl) else {
-            self.error = NSError(domain: "PlayerViewModel", code: -1, userInfo: [NSLocalizedDescriptionKey: "无效的视频地址"])
+    var currentEpisode: VodInfo.VodPlayItem? {
+        episodes.indices.contains(episodeIndex) ? episodes[episodeIndex] : nil
+    }
+    
+    private var hasPrevious: Bool { episodeIndex > 0 }
+    private var hasNext: Bool { episodeIndex + 1 < episodes.count }
+    
+    func start(
+        episodes: [VodInfo.VodPlayItem],
+        episodeIndex: Int,
+        startPosition: Double,
+        resolve: @escaping (VodInfo.VodPlayItem) async throws -> PlayAddress,
+        onProgress: @escaping @MainActor (Int, Double, Double) -> Void
+    ) {
+        self.episodes = episodes
+        self.resolve = resolve
+        self.onProgress = onProgress
+        play(episodeIndex: episodeIndex, startPosition: startPosition)
+    }
+    
+    func playPrevious() {
+        guard hasPrevious else {
+            showToast(message: "已经是第一集了!")
             return
         }
+        play(episodeIndex: episodeIndex - 1)
+    }
+    
+    func playNext() {
+        guard hasNext else {
+            showToast(message: "已经是最后一集了!")
+            return
+        }
+        play(episodeIndex: episodeIndex + 1)
+    }
+    
+    private func showToast(message: String) {
+        toastMessage = message
+        showToast = true
+    }
+    
+    /// 先取得真实播放地址再开始播放
+    private func play(episodeIndex: Int, startPosition: Double = 0) {
+        reportProgress()
+        tearDownPlayer()
         
-        let playerItem = AVPlayerItem(url: url)
+        self.episodeIndex = episodeIndex
+        didPlayToEnd = false
+        pendingSeekPosition = startPosition
+        error = nil
+        currentTime = 0
+        duration = 0
+        progress = 0
+        
+        guard let episode = currentEpisode, let resolve else { return }
+        resolveTask = Task {
+            do {
+                let address = try await resolve(episode)
+                // 取地址期间已关闭播放器或切换了剧集
+                guard !Task.isCancelled else { return }
+                loadVideo(url: address.url, headers: address.headers ?? [:], format: address.format)
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.error = error
+            }
+        }
+    }
+    
+    private func loadVideo(url: URL, headers: [String: String], format: String?) {
+        var options: [String: Any] = [:]
+        if !headers.isEmpty {
+            options["AVURLAssetHTTPHeaderFieldsKey"] = headers
+        }
+        // 部分站点的 m3u8 地址没有扩展名，按站点给出的 format 指定类型
+        if let format, !format.isEmpty {
+            options[AVURLAssetOverrideMIMETypeKey] = format
+        }
+        
+        let playerItem = AVPlayerItem(asset: AVURLAsset(url: url, options: options))
         player = AVPlayer(playerItem: playerItem)
         
         // 监听播放状态
         statusObserver = playerItem.observe(\.status) { [weak self] item, _ in
             DispatchQueue.main.async {
+                guard let self else { return }
                 switch item.status {
                 case .readyToPlay:
-                    self?.duration = item.duration.seconds
-                    self?.player?.play()
-                    self?.isPlaying = true
+                    self.duration = item.duration.seconds
+                    if self.pendingSeekPosition > 0 {
+                        let position = self.pendingSeekPosition
+                        self.pendingSeekPosition = 0
+                        self.currentTime = position
+                        self.player?.seek(to: CMTime(seconds: position, preferredTimescale: 600))
+                    }
+                    self.player?.play()
+                    self.isPlaying = true
+                    // 开始播放就记一条历史
+                    self.reportProgress()
                 case .failed:
-                    self?.error = item.error
+                    self.error = item.error
                 default:
                     break
                 }
@@ -303,6 +414,9 @@ class PlayerViewModel: ObservableObject {
                 
                 self.currentTime = time.seconds
                 self.progress = time.seconds / duration
+                if abs(time.seconds - self.lastReportedTime) >= Self.progressReportInterval {
+                    self.reportProgress()
+                }
             }
         }
         
@@ -316,6 +430,47 @@ class PlayerViewModel: ObservableObject {
                 self?.isBuffering = true
             }
         }
+        
+        // 播完清除该集进度并自动播下一集
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: playerItem,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.didPlayToEnd = true
+                self.reportProgress()
+                self.playNext()
+            }
+        }
+    }
+    
+    /// 上报当前剧集的播放进度，用于记录播放历史
+    private func reportProgress() {
+        // 还没开始播放时不上报，避免续播位置被 0 覆盖
+        guard player?.currentItem?.status == .readyToPlay, currentEpisode != nil else { return }
+        lastReportedTime = currentTime
+        onProgress?(episodeIndex, didPlayToEnd ? 0 : currentTime, duration.isFinite ? duration : 0)
+    }
+    
+    private func tearDownPlayer() {
+        resolveTask?.cancel()
+        player?.pause()
+        
+        if let observer = timeObserver {
+            player?.removeTimeObserver(observer)
+            timeObserver = nil
+        }
+        if let observer = endObserver {
+            NotificationCenter.default.removeObserver(observer)
+            endObserver = nil
+        }
+        
+        statusObserver?.invalidate()
+        player = nil
+        isPlaying = false
+        isBuffering = false
     }
     
     func togglePlayPause() {
@@ -348,14 +503,8 @@ class PlayerViewModel: ObservableObject {
     }
     
     func cleanup() {
-        player?.pause()
-        
-        if let observer = timeObserver {
-            player?.removeTimeObserver(observer)
-        }
-        
-        statusObserver?.invalidate()
-        player = nil
+        reportProgress()
+        tearDownPlayer()
     }
     
     private func formatTime(_ time: TimeInterval) -> String {

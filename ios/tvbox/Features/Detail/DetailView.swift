@@ -5,11 +5,14 @@ struct DetailView: View {
     @StateObject private var viewModel = DetailViewModel()
     @State private var selectedSourceIndex = 0
     @State private var showPlayer = false
-    @State private var selectedEpisode: VodInfo.VodPlayItem?
+    @State private var selectedEpisodeIndex: Int?
     
     var body: some View {
         Group {
-            if isCatNodeConfigCenterMovie {
+            if movie.vodId.hasPrefix("msearch:") {
+                // 豆瓣等推荐站点的卡片没有详情，和 Android 一样按片名跳转快速搜索
+                FastSearchView(keyword: movie.vodName)
+            } else if isCatNodeConfigCenterMovie {
                 CatNodeConfigCenterView()
                     .tvboxInlineNavigationBarTitle()
             } else if let configCenterURL {
@@ -37,6 +40,15 @@ struct DetailView: View {
     /// Node 运行的配置包「配置|中心」站点首页卡片，直接打开配置包自带的 `/website`。
     private var isCatNodeConfigCenterMovie: Bool {
         movie.vodId == "config-center" && ApiConfig.shared.currentSite?.catNodeApi != nil
+    }
+
+    /// 详情所属站点：搜索结果带来源站点，否则为当前站点
+    private var site: SiteBean? {
+        let apiConfig = ApiConfig.shared
+        if let sourceKey = movie.sourceKey, let site = apiConfig.sites.first(where: { $0.key == sourceKey }) {
+            return site
+        }
+        return apiConfig.currentSite
     }
 
     private var isConfigCenterMovie: Bool {
@@ -79,16 +91,30 @@ struct DetailView: View {
             }
         }
         .tvboxFullScreenCover(isPresented: $showPlayer) {
-            if let episode = selectedEpisode, let vodInfo = viewModel.vodInfo {
+            if let episodeIndex = selectedEpisodeIndex, let vodInfo = viewModel.vodInfo {
+                let sourceIndex = selectedSourceIndex
+                let flag = vodInfo.playFlags.indices.contains(sourceIndex) ? vodInfo.playFlags[sourceIndex] : ""
                 PlayerView(
                     vodInfo: vodInfo,
-                    sourceIndex: selectedSourceIndex,
-                    episode: episode
+                    sourceIndex: sourceIndex,
+                    episodeIndex: episodeIndex,
+                    startPosition: viewModel.resumePosition(sourceIndex: sourceIndex, episodeIndex: episodeIndex),
+                    resolvePlayUrl: { episode in try await viewModel.getPlayUrlAsync(flag: flag, episode: episode) },
+                    onProgress: { episodeIndex, position, duration in
+                        viewModel.addToHistory(sourceIndex: sourceIndex, episodeIndex: episodeIndex, progress: position, duration: duration)
+                    }
                 )
             }
         }
         .onAppear {
-            viewModel.loadDetail(vodId: movie.vodId)
+            viewModel.loadDetail(vodId: movie.vodId, site: site)
+        }
+        .onChange(of: viewModel.vodInfo?.vodId) { _, _ in
+            // 和 Android 一样恢复上次播放的线路
+            if let history = viewModel.history, let vodInfo = viewModel.vodInfo,
+               history.playIndex < vodInfo.playUrls.count {
+                selectedSourceIndex = history.playIndex
+            }
         }
     }
     
@@ -221,15 +247,38 @@ struct DetailView: View {
             // 剧集列表
             if selectedSourceIndex < vodInfo.playUrls.count {
                 let episodes = vodInfo.playUrls[selectedSourceIndex]
+                let playIndex = viewModel.playIndex(sourceIndex: selectedSourceIndex)
                 
-                Text("选集 (\(episodes.count))")
-                    .font(.headline)
-                    .padding(.horizontal)
+                HStack {
+                    Text("选集 (\(episodes.count))")
+                        .font(.headline)
+                    
+                    Spacer()
+                    
+                    if !episodes.isEmpty {
+                        Button(action: {
+                            selectedEpisodeIndex = playIndex
+                            showPlayer = true
+                        }) {
+                            Label("立即播放", systemImage: "play.fill")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 6)
+                                .background(Color.blue)
+                                .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal)
                 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 70), spacing: 8)], spacing: 8) {
-                    ForEach(episodes) { episode in
+                    ForEach(Array(episodes.enumerated()), id: \.element.id) { index, episode in
+                        let isPlayIndex = index == playIndex
                         Button(action: {
-                            selectedEpisode = episode
+                            selectedEpisodeIndex = index
                             showPlayer = true
                         }) {
                             Text(episode.name)
@@ -237,8 +286,8 @@ struct DetailView: View {
                                 .lineLimit(1)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 10)
-                                .background(Color.tvboxSystemGray5)
-                                .foregroundColor(.primary)
+                                .background(isPlayIndex ? Color.blue : Color.tvboxSystemGray5)
+                                .foregroundColor(isPlayIndex ? .white : .primary)
                                 .cornerRadius(6)
                         }
                     }
@@ -268,6 +317,8 @@ class DetailViewModel: ObservableObject {
     @Published var vodInfo: VodInfo?
     @Published var isLoading = false
     @Published var isCollected = false
+    /// 该视频的播放记录
+    @Published private(set) var history: StorageManager.VodHistoryItem?
     @Published var error: Error?
     @Published var playerContent: PlayerContent?
     @Published var isLoadingPlayer = false
@@ -275,26 +326,31 @@ class DetailViewModel: ObservableObject {
     @Published var parsedHeaders: [String: String]?
     @Published var parseStatus: String = ""
     
+    private var site: SiteBean?
     private let apiConfig = ApiConfig.shared
     private let storageManager = StorageManager.shared
     private let spiderManager = SpiderManager.shared
     private let parserManager = ParserManager.shared
     
     /// 加载视频详情
-    /// - Parameter vodId: 视频ID
-    func loadDetail(vodId: String) {
-        guard apiConfig.currentSite != nil else { return }
+    /// - Parameters:
+    ///   - vodId: 视频ID
+    ///   - site: 视频所属站点
+    func loadDetail(vodId: String, site: SiteBean?) {
+        guard let site else { return }
         
+        self.site = site
         isLoading = true
         error = nil
         
         Task {
             do {
-                let details = try await spiderManager.detailContent(ids: [vodId])
+                let details = try await spiderManager.detailContent(site: site, ids: [vodId])
                 await MainActor.run {
                     self.vodInfo = details.first
                     self.isLoading = false
                     self.checkCollected(vodId: vodId)
+                    self.history = self.storageManager.getVodHistory().first { $0.vodId == vodId && $0.siteKey == site.key }
                 }
             } catch {
                 await MainActor.run {
@@ -306,9 +362,11 @@ class DetailViewModel: ObservableObject {
     }
     
     /// 加载视频详情 (使用 MovieItem)
-    /// - Parameter movie: 视频项
-    func loadDetail(movie: MovieItem) {
-        loadDetail(vodId: movie.vodId)
+    /// - Parameters:
+    ///   - movie: 视频项
+    ///   - site: 视频所属站点
+    func loadDetail(movie: MovieItem, site: SiteBean?) {
+        loadDetail(vodId: movie.vodId, site: site)
     }
     
     /// 获取播放地址
@@ -316,6 +374,8 @@ class DetailViewModel: ObservableObject {
     ///   - flag: 播放源标识
     ///   - episode: 剧集信息
     func loadPlayerContent(flag: String, episode: VodInfo.VodPlayItem) {
+        guard let site else { return }
+        
         isLoadingPlayer = true
         playerContent = nil
         parsedUrl = nil
@@ -325,7 +385,7 @@ class DetailViewModel: ObservableObject {
         Task {
             do {
                 // 1. 获取播放内容
-                var content = try await spiderManager.playerContent(flag: flag, id: episode.url)
+                var content = try await spiderManager.playerContent(site: site, flag: flag, id: episode.url)
                 let initialContent = content
                 
                 await MainActor.run {
@@ -386,10 +446,18 @@ class DetailViewModel: ObservableObject {
     /// - Parameters:
     ///   - flag: 播放源标识
     ///   - episode: 剧集信息
-    /// - Returns: 可播放的 URL 和 headers
-    func getPlayUrlAsync(flag: String, episode: VodInfo.VodPlayItem) async throws -> (url: URL, headers: [String: String]?) {
+    /// - Returns: 可播放的 URL、headers 和站点给出的媒体格式
+    func getPlayUrlAsync(flag: String, episode: VodInfo.VodPlayItem) async throws -> (url: URL, headers: [String: String]?, format: String?) {
+        guard let site else { throw SpiderError.invalidSite }
+        
         // 1. 获取播放内容
-        var content = try await spiderManager.playerContent(flag: flag, id: episode.url)
+        var content = try await spiderManager.playerContent(site: site, flag: flag, id: episode.url)
+        
+        // jx=1 时和 Android 一样改用默认解析
+        if content.jxFrom == "1" {
+            content.parse = 1
+            content.playUrl = nil
+        }
         
         // 2. 如果需要解析
         if content.needParse {
@@ -401,17 +469,17 @@ class DetailViewModel: ObservableObject {
             throw ParserError.invalidUrl
         }
         
-        return (url, content.header)
+        return (url, content.header, content.format)
     }
     
     /// 切换收藏状态
     func toggleCollect() {
-        guard let vodInfo = vodInfo else { return }
+        guard let vodInfo = vodInfo, let site else { return }
         
         if isCollected {
-            storageManager.removeCollect(vodId: vodInfo.vodId)
+            storageManager.removeCollect(vodId: vodInfo.vodId, siteKey: site.key)
         } else {
-            storageManager.addCollect(vodInfo: vodInfo)
+            storageManager.addCollect(vodInfo: vodInfo, site: site)
         }
         isCollected.toggle()
     }
@@ -420,19 +488,62 @@ class DetailViewModel: ObservableObject {
     /// - Parameters:
     ///   - sourceIndex: 播放源索引
     ///   - episodeIndex: 剧集索引
-    ///   - progress: 播放进度
-    func addToHistory(sourceIndex: Int, episodeIndex: Int, progress: Double) {
-        guard let vodInfo = vodInfo else { return }
-        storageManager.addHistory(
+    ///   - progress: 播放进度 (秒)
+    ///   - duration: 总时长 (秒)
+    func addToHistory(sourceIndex: Int, episodeIndex: Int, progress: Double, duration: Double) {
+        guard let vodInfo = vodInfo, let site,
+              sourceIndex < vodInfo.playFlags.count, sourceIndex < vodInfo.playUrls.count,
+              episodeIndex < vodInfo.playUrls[sourceIndex].count else { return }
+        let episodeName = vodInfo.playUrls[sourceIndex][episodeIndex].name
+        history = storageManager.addHistory(
             vodInfo: vodInfo,
+            site: site,
             sourceIndex: sourceIndex,
             episodeIndex: episodeIndex,
-            progress: progress
+            episodeName: episodeName,
+            progress: progress,
+            duration: duration
         )
+        storageManager.savePlayProgress(StorageManager.PlayProgressItem(
+            vodId: vodInfo.vodId,
+            siteKey: site.key,
+            flag: vodInfo.playFlags[sourceIndex],
+            episodeIndex: episodeIndex,
+            episodeName: episodeName,
+            progress: progress,
+            duration: duration
+        ))
+    }
+    
+    /// 该剧集上次的播放位置 (秒)，没有记录时从头播放
+    func resumePosition(sourceIndex: Int, episodeIndex: Int) -> Double {
+        guard let vodInfo = vodInfo, let site,
+              sourceIndex < vodInfo.playFlags.count, sourceIndex < vodInfo.playUrls.count,
+              episodeIndex < vodInfo.playUrls[sourceIndex].count else { return 0 }
+        return storageManager.getPlayProgress(
+            vodId: vodInfo.vodId,
+            siteKey: site.key,
+            flag: vodInfo.playFlags[sourceIndex],
+            episodeIndex: episodeIndex,
+            episodeName: vodInfo.playUrls[sourceIndex][episodeIndex].name
+        )?.progress ?? 0
+    }
+    
+    /// 当前播放源下选中的剧集，对应 Android 的 vodInfo.playIndex：
+    /// 有播放记录时选中上次看的那一集，切换播放源后按集名找到对应剧集，否则选中第一集
+    func playIndex(sourceIndex: Int) -> Int {
+        guard let vodInfo, sourceIndex < vodInfo.playUrls.count else { return 0 }
+        let episodes = vodInfo.playUrls[sourceIndex]
+        guard let history else { return 0 }
+        if history.playIndex == sourceIndex {
+            return history.episodeIndex < episodes.count ? history.episodeIndex : 0
+        }
+        return episodes.firstIndex { $0.name == history.episodeName } ?? 0
     }
     
     private func checkCollected(vodId: String) {
-        isCollected = storageManager.isCollected(vodId: vodId)
+        guard let site else { return }
+        isCollected = storageManager.isCollected(vodId: vodId, siteKey: site.key)
     }
 }
 

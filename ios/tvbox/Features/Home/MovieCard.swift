@@ -2,6 +2,8 @@ import SwiftUI
 
 struct MovieCard: View {
     let movie: MovieItem
+    /// 标题下方的补充说明，例如聚合搜索结果的来源站点
+    var subtitle: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -22,12 +24,21 @@ struct MovieCard: View {
                 }
             }
 
-            Text(movie.vodName)
-                .font(.subheadline)
-                .foregroundColor(.primary)
-                .lineLimit(1)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 8)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(movie.vodName)
+                    .font(.subheadline)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
         }
         .background(Color.tvboxSystemBackground)
         .cornerRadius(10)

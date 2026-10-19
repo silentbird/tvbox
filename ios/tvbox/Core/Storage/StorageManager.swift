@@ -74,13 +74,16 @@ class StorageManager {
     
     // MARK: - Watch History
     
-    struct VodHistoryItem: Codable {
+    struct VodHistoryItem: Codable, Identifiable {
+        var id: String { "\(siteKey)_\(vodId)" }
+        
         let vodId: String
         let vodName: String
         let vodPic: String?
         let siteKey: String
         let playIndex: Int // 播放源索引
         let episodeIndex: Int // 剧集索引
+        let episodeName: String? // 剧集名称，对应 Android 的 playNote
         let progress: Double // 播放进度 (秒)
         let duration: Double // 总时长 (秒)
         let updateTime: Date
@@ -128,6 +131,7 @@ class StorageManager {
                 siteKey: item.siteKey,
                 playIndex: item.playIndex,
                 episodeIndex: episodeIndex,
+                episodeName: item.episodeName,
                 progress: progress,
                 duration: item.duration,
                 updateTime: Date()
@@ -149,22 +153,23 @@ class StorageManager {
     }
     
     /// 添加播放历史 (从 VodInfo)
-    func addHistory(vodInfo: VodInfo, sourceIndex: Int, episodeIndex: Int, progress: Double) {
-        guard let currentSite = ApiConfig.shared.currentSite else { return }
-        
+    @discardableResult
+    func addHistory(vodInfo: VodInfo, site: SiteBean, sourceIndex: Int, episodeIndex: Int, episodeName: String?, progress: Double, duration: Double) -> VodHistoryItem {
         let item = VodHistoryItem(
             vodId: vodInfo.vodId,
             vodName: vodInfo.vodName,
             vodPic: vodInfo.vodPic,
-            siteKey: currentSite.key,
+            siteKey: site.key,
             playIndex: sourceIndex,
             episodeIndex: episodeIndex,
+            episodeName: episodeName,
             progress: progress,
-            duration: 0,
+            duration: duration,
             updateTime: Date()
         )
         
         addVodHistory(item)
+        return item
     }
     
     private func saveVodHistory(_ history: [VodHistoryItem]) {
@@ -203,16 +208,14 @@ class StorageManager {
         }
     }
     
-    func addCollect(vodInfo: VodInfo) {
-        guard let currentSite = ApiConfig.shared.currentSite else { return }
-        
+    func addCollect(vodInfo: VodInfo, site: SiteBean) {
         let item = VodCollectItem(
             vodId: vodInfo.vodId,
             vodName: vodInfo.vodName,
             vodPic: vodInfo.vodPic,
             vodRemarks: vodInfo.vodRemarks,
-            siteKey: currentSite.key,
-            siteName: currentSite.name,
+            siteKey: site.key,
+            siteName: site.name,
             createTime: Date()
         )
         
@@ -227,19 +230,15 @@ class StorageManager {
         saveCollects(collects)
     }
     
-    func removeCollect(vodId: String) {
-        guard let currentSite = ApiConfig.shared.currentSite else { return }
-        
+    func removeCollect(vodId: String, siteKey: String) {
         var collects = getCollects()
-        collects.removeAll { $0.vodId == vodId && $0.siteKey == currentSite.key }
+        collects.removeAll { $0.vodId == vodId && $0.siteKey == siteKey }
         saveCollects(collects)
     }
     
-    func isCollected(vodId: String) -> Bool {
-        guard let currentSite = ApiConfig.shared.currentSite else { return false }
-        
+    func isCollected(vodId: String, siteKey: String) -> Bool {
         let collects = getCollects()
-        return collects.contains { $0.vodId == vodId && $0.siteKey == currentSite.key }
+        return collects.contains { $0.vodId == vodId && $0.siteKey == siteKey }
     }
     
     func clearCollects() {
@@ -260,13 +259,20 @@ class StorageManager {
     struct PlayProgressItem: Codable {
         let vodId: String
         let siteKey: String
+        let flag: String // 播放源
         let episodeIndex: Int
+        let episodeName: String
         let progress: Double // 播放位置 (秒)
         let duration: Double // 总时长 (秒)
     }
     
-    func getPlayProgress(vodId: String, siteKey: String, episodeIndex: Int) -> PlayProgressItem? {
-        let key = "\(Keys.playProgress)_\(siteKey)_\(vodId)_\(episodeIndex)"
+    /// 每一集单独记录进度，和 Android 的 progressKey 一样由站点、视频、播放源、剧集组成
+    private func playProgressKey(vodId: String, siteKey: String, flag: String, episodeIndex: Int, episodeName: String) -> String {
+        "\(Keys.playProgress)_\(siteKey)_\(vodId)_\(flag)_\(episodeIndex)_\(episodeName)"
+    }
+    
+    func getPlayProgress(vodId: String, siteKey: String, flag: String, episodeIndex: Int, episodeName: String) -> PlayProgressItem? {
+        let key = playProgressKey(vodId: vodId, siteKey: siteKey, flag: flag, episodeIndex: episodeIndex, episodeName: episodeName)
         
         guard let data = userDefaults.data(forKey: key) else {
             return nil
@@ -280,7 +286,7 @@ class StorageManager {
     }
     
     func savePlayProgress(_ item: PlayProgressItem) {
-        let key = "\(Keys.playProgress)_\(item.siteKey)_\(item.vodId)_\(item.episodeIndex)"
+        let key = playProgressKey(vodId: item.vodId, siteKey: item.siteKey, flag: item.flag, episodeIndex: item.episodeIndex, episodeName: item.episodeName)
         
         do {
             let data = try JSONEncoder().encode(item)
