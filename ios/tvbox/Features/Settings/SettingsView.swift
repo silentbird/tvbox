@@ -11,63 +11,61 @@ struct SettingsView: View {
     @State private var showClearCacheAlert = false
     
     var body: some View {
-        NavigationView {
-            List {
-                // 配置管理
-                configSection
-                
-                // 播放设置
-                playbackSection
-                
-                // 数据管理
-                dataSection
-                
-                // 关于
-                aboutSection
-            }
-            .navigationTitle("设置")
-            .sheet(isPresented: $showApiInput) {
-                ApiInputView(
-                    title: "配置地址",
-                    placeholder: "请输入配置地址",
-                    currentValue: viewModel.apiUrl,
-                    recentValues: viewModel.apiHistory,
-                    onDeleteRecent: { url in
-                        viewModel.removeApiHistory(url)
-                    },
-                    onClearRecent: {
-                        viewModel.clearApiHistory()
-                    }
-                ) { url in
-                    viewModel.updateApiUrl(url)
+        List {
+            // 配置管理
+            configSection
+            
+            // 播放设置
+            playbackSection
+            
+            // 数据管理
+            dataSection
+            
+            // 关于
+            aboutSection
+        }
+        .navigationTitle("设置")
+        .sheet(isPresented: $showApiInput) {
+            ApiInputView(
+                title: "配置地址",
+                placeholder: "请输入配置地址",
+                currentValue: viewModel.apiUrl,
+                recentValues: viewModel.apiHistory,
+                onDeleteRecent: { url in
+                    viewModel.removeApiHistory(url)
+                },
+                onClearRecent: {
+                    viewModel.clearApiHistory()
                 }
+            ) { url in
+                viewModel.updateApiUrl(url)
             }
-            .sheet(isPresented: $showLiveApiInput) {
-                ApiInputView(
-                    title: "直播地址",
-                    placeholder: "请输入直播配置地址",
-                    currentValue: viewModel.liveApiUrl
-                ) { url in
-                    viewModel.updateLiveApiUrl(url)
-                }
+        }
+        .sheet(isPresented: $showLiveApiInput) {
+            ApiInputView(
+                title: "直播地址",
+                placeholder: "请输入直播配置地址",
+                currentValue: viewModel.liveApiUrl
+            ) { url in
+                viewModel.updateLiveApiUrl(url)
             }
-            .sheet(isPresented: $showSiteSelector) {
-                SiteSelectorView()
+        }
+        .sheet(isPresented: $showSiteSelector) {
+            SiteSelectorView()
+        }
+        .sheet(isPresented: $showParseSelector) {
+            ParseSelectorView()
+        }
+        .sheet(isPresented: $showAbout) {
+            AboutView()
+        }
+        .alert("清除缓存", isPresented: $showClearCacheAlert) {
+            Button("取消", role: .cancel) {}
+            Button("清除", role: .destructive) {
+                viewModel.clearCache()
             }
-            .sheet(isPresented: $showParseSelector) {
-                ParseSelectorView()
-            }
-            .sheet(isPresented: $showAbout) {
-                AboutView()
-            }
-            .alert("清除缓存", isPresented: $showClearCacheAlert) {
-                Button("取消", role: .cancel) {}
-                Button("清除", role: .destructive) {
-                    viewModel.clearCache()
-                }
-            } message: {
-                Text("确定要清除所有缓存数据吗？")
-            }
+        } message: {
+            Text("确定要清除所有缓存数据吗？")
         }
     }
     
@@ -281,7 +279,7 @@ struct ApiInputView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 20) {
                 // 输入框
                 VStack(alignment: .leading, spacing: 8) {
@@ -404,7 +402,7 @@ struct SiteSelectorView: View {
     @ObservedObject private var apiConfig = ApiConfig.shared
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List {
                 ForEach(apiConfig.sites) { site in
                     let unsupportedReason = site.websiteBundleUnsupportedReason
@@ -467,7 +465,7 @@ struct ParseSelectorView: View {
     @ObservedObject private var apiConfig = ApiConfig.shared
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List {
                 ForEach(apiConfig.parses) { parse in
                     Button(action: {
@@ -511,7 +509,7 @@ struct AboutView: View {
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 30) {
                 Spacer()
                 
@@ -677,6 +675,8 @@ class SettingsViewModel: ObservableObject {
 
 #if !targetEnvironment(macCatalyst)
 #Preview {
-    SettingsView()
+    NavigationStack {
+        SettingsView()
+    }
 }
 #endif
