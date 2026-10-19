@@ -105,14 +105,20 @@ struct DetailView: View {
             if let vodInfo = viewModel.vodInfo {
                 let sourceIndex = request.sourceIndex
                 let episodeIndex = request.episodeIndex
-                let flag = vodInfo.playFlags.indices.contains(sourceIndex) ? vodInfo.playFlags[sourceIndex] : ""
                 PlayerView(
                     title: vodInfo.vodName,
-                    episodes: vodInfo.playUrls.indices.contains(sourceIndex) ? vodInfo.playUrls[sourceIndex] : [],
+                    sources: vodInfo.playFlags.indices.map { index in
+                        PlaySource(
+                            flag: vodInfo.playFlags[index],
+                            episodes: vodInfo.playUrls.indices.contains(index) ? vodInfo.playUrls[index] : []
+                        )
+                    },
+                    sourceIndex: sourceIndex,
                     episodeIndex: episodeIndex,
                     startPosition: viewModel.resumePosition(sourceIndex: sourceIndex, episodeIndex: episodeIndex),
-                    resolvePlayUrl: { episode in try await viewModel.getPlayUrlAsync(flag: flag, episode: episode) },
-                    onProgress: { episodeIndex, position, duration in
+                    configKey: "\(site?.key ?? "")_\(vodInfo.vodId)",
+                    resolvePlayUrl: { flag, episode in try await viewModel.getPlayUrlAsync(flag: flag, episode: episode) },
+                    onProgress: { sourceIndex, episodeIndex, position, duration in
                         viewModel.addToHistory(sourceIndex: sourceIndex, episodeIndex: episodeIndex, progress: position, duration: duration)
                     }
                 )

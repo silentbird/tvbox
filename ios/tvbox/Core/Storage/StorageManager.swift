@@ -14,6 +14,7 @@ class StorageManager {
         static let vodHistory = "vod_history"
         static let vodCollect = "vod_collect"
         static let playProgress = "play_progress"
+        static let playerConfig = "player_config"
     }
     
     private init() {}
@@ -317,6 +318,38 @@ class StorageManager {
             userDefaults.set(data, forKey: key)
         } catch {
             AppLogger.debug("Failed to encode play progress: \(error)")
+        }
+    }
+
+    // MARK: - Player Config
+
+    /// 每部剧单独保存的播放设置，对应 Android 的 VodInfo.playerCfg
+    struct VodPlayerConfig: Codable, Equatable {
+        /// 画面比例，对应 sc
+        var scale = 0
+        /// 倍速，对应 sp
+        var speed: Float = 1
+        /// 片头时长 (秒)，对应 st
+        var openingTime: Double = 0
+        /// 片尾时长 (秒)，对应 et
+        var endingTime: Double = 0
+    }
+
+    /// key 由站点和视频组成，和历史记录的 id 一样
+    func getPlayerConfig(key: String) -> VodPlayerConfig {
+        guard let data = userDefaults.data(forKey: "\(Keys.playerConfig)_\(key)"),
+              let config = try? JSONDecoder().decode(VodPlayerConfig.self, from: data) else {
+            return VodPlayerConfig()
+        }
+        return config
+    }
+
+    func savePlayerConfig(_ config: VodPlayerConfig, key: String) {
+        do {
+            let data = try JSONEncoder().encode(config)
+            userDefaults.set(data, forKey: "\(Keys.playerConfig)_\(key)")
+        } catch {
+            AppLogger.debug("Failed to encode player config: \(error)")
         }
     }
 }

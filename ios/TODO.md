@@ -15,7 +15,7 @@
 | 3 | 首页与分类 | 🟡 | 首页、豆瓣推荐、分类分页可用；缺筛选 |
 | 4 | 搜索 | 🟡 | 当前站/聚合/快速搜索、历史可用；缺指定搜索源，热词是写死的 |
 | 5 | 详情 | 🟡 | 线路、剧集、收藏、续播可用；缺倒序、切源（换站点） |
-| 6 | 点播播放器 | 🟡 | AVPlayer 播放、上下集、续播、请求头可用；倍速/画质/字幕菜单是空按钮 |
+| 6 | 点播播放器 | 🟡 | KSPlayer 播放，控制层按 Android 重做（倍速、比例、片头片尾、选集换线、手势、锁屏）；缺画中画/AirPlay、后台播放 |
 | 7 | 解析与嗅探 | 🟡 | 解析器代码齐全，但 `parses` 永远为空，需要解析的视频都会失败 |
 | 8 | 直播 | 🟡 | 解析器和界面都有，但**没有数据来源**，直播页永远为空 |
 | 9 | 历史与收藏 | ✅ | 历史（含每集进度）、收藏、搜索历史、配置历史可用 |
@@ -144,27 +144,31 @@
 ## 6. 点播播放器 🟡
 
 - Android: `player/MyVideoView.java`、`player/controller/VodController.java`、`ui/fragment/PlayFragment.java`、`util/PlayerHelper.java`、`util/AudioTrackMemory.java`、`player/MusicPlaybackService.java`
-- iOS: `Features/Player/PlayerView.swift`
+- iOS: `Features/Player/*`（内核在 `Engine/`，新播放器实现 `PlaybackEngine` 并加到 `PlayerKind`）
 
 已完成:
-- ✅ AVPlayer 播放、暂停、拖动、快进快退。
-- ✅ 上一集/下一集、播完自动下一集、每集续播。
-- ✅ 站点请求头（UA/Referer/Cookie）注入、按 `format` 指定 MIME。
+- ✅ 只用 KSPlayer (FFmpeg) 内核，去掉了 AVPlayer。
+- ✅ 播放、暂停、拖动、快进快退，上/下一集、续播、请求头（UA/Referer/Cookie）注入。
+- ✅ 倍速 0.75x–3x、画面比例（默认/16:9/4:3/填充/裁剪）、片头片尾，按剧保存（同 Android `playerCfg`）。
+- ✅ 跳过片头；到片尾或播完时 5 秒倒计时自动下一集，可取消。
+- ✅ 播放页内选集，可切换线路（从历史直接播放时只有上次的线路）。
+- ✅ 内嵌字幕、音轨选择。
+- ✅ 重新加载、从头播放；播放失败时可重试或换线路。
+- ✅ 手势: 单击显隐控制层，双击左右快退快进、中间暂停，长按 3 倍速，横滑调进度，左半屏亮度、右半屏音量；锁屏。
+- ✅ 键盘: 空格播放/暂停，←/→ 10 秒，↑/↓ 音量。
+- ✅ 右上角分辨率、网速（HLS 测不到网速时不显示）、时间。
 
 待办:
-- [ ] 倍速（菜单里「倍速」目前是空按钮）。验收: 0.5x–3x 可切换，切集后保持。
-- [ ] 画面比例/缩放（Android「画面缩放」、播放器里的 16:9）。
-- [ ] 音轨、内嵌字幕轨选择（AVPlayer `AVMediaSelectionGroup`，对照「音轨/视轨」）。
-- [ ] 跳过片头片尾（Android「片头尾」，按影片记忆时间点）。
-- [ ] 重播、刷新（重新取播放地址）。
-- [ ] 播放失败自动换线路/换解析（Android「自动换线」）。
-- [ ] 画中画（iOS）。
+- [ ] 画中画（KSPlayer 的 `pipController`）。验收: 播放中切到后台或点按钮进入画中画。
+- [ ] AirPlay 投屏（见第 15 类）。
+- [ ] 播放失败自动换线路/换解析（Android「自动换线」）；换解析等 `parses` 有数据后再做。
 - [ ] 后台播放与锁屏控制: `AVAudioSession`、`MPNowPlayingInfoCenter`、`MPRemoteCommandCenter`（对照 `MusicPlaybackService`）。
-- [ ] 播放时禁止自动锁屏。
+- [ ] 外挂字幕（见第 12 类）。
 - [ ] 外部播放器（可选）: 通过 URL scheme 交给 VLC/Infuse，对照 `player/thirdparty`。
+- [ ] 其它内核（如 mpv）: 实现 `PlaybackEngine`，加到 `PlayerKind`，播放设置面板再加「播放器」选项。
 
 不移植:
-- ⛔ IJK、Exo、阿里播放器及其解码/缓存设置（iOS 统一用 AVPlayer）。
+- ⛔ IJK、Exo、阿里播放器及其解码/缓存设置；Android 的「原始」比例、视轨、横竖屏按钮。
 
 ## 7. 解析与嗅探 🟡
 
@@ -285,7 +289,7 @@
 - iOS: 无（配置中心里已有二维码生成）
 
 待办:
-- [ ] AirPlay 投屏: 播放器加 `AVRoutePickerView`，开启 `allowsExternalPlayback`。验收: 能投到 Apple TV 或支持 AirPlay 的电视。
+- [ ] AirPlay 投屏: 播放器已去掉 AVPlayer，KSPlayer (FFmpeg 内核) 不能直接走 AirPlay，需要另想办法（如 AirPlay 时临时交给 AVPlayer 播放）。验收: 能投到 Apple TV 或支持 AirPlay 的电视。
 - [ ] 推送给局域网里的 Android TVBox: 扫描 9978 端口设备，把当前视频或配置推过去（对照 `IpScanning`、`SearchRemoteTvDialog`）。
 - [ ] 接收推送: App 内起 HTTP 服务（iOS 只能前台运行），手机网页提交地址后直接播放（对照 `RemoteServer`、`RemoteDialog` 二维码）。
 - [ ] URL scheme 接收外部推送（对照 `receiver/PushReceiver`）。
@@ -312,7 +316,7 @@
 
 待办:
 - [ ] 决定 Mac 主线: Catalyst 还是原生 macOS（现在两者都在构建，Xcode 默认「My Mac」是原生版）。
-- [ ] Mac 键盘: 空格播放/暂停、左右快退快进、上下切台、ESC 退出全屏。
+- [ ] Mac 键盘: 点播的空格、方向键已做；直播上下切台、ESC 退出全屏。
 - [ ] Mac 菜单栏: 打开配置、刷新、播放控制、全屏。
 - [ ] 播放器全屏与窗口尺寸适配。
 - [ ] iPad 分栏布局: 宽布局已在横屏 iPad 上生效，未在 iPad 模拟器上实测。

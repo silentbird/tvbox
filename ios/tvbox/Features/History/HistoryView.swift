@@ -127,13 +127,16 @@ struct HistoryView: View {
     @ViewBuilder
     private func player(for item: StorageManager.VodHistoryItem) -> some View {
         if let site = viewModel.playableSite(for: item), let flag = item.playFlag, let episodes = item.episodes {
+            // 历史只存了上次播放的线路
             PlayerView(
                 title: item.vodName,
-                episodes: episodes,
+                sources: [PlaySource(flag: flag, episodes: episodes)],
+                sourceIndex: 0,
                 episodeIndex: episodes.indices.contains(item.episodeIndex) ? item.episodeIndex : 0,
                 startPosition: item.progress,
-                resolvePlayUrl: { episode in try await resolvePlayAddress(site: site, flag: flag, episode: episode) },
-                onProgress: { episodeIndex, position, duration in
+                configKey: item.id,
+                resolvePlayUrl: { flag, episode in try await resolvePlayAddress(site: site, flag: flag, episode: episode) },
+                onProgress: { _, episodeIndex, position, duration in
                     viewModel.recordProgress(item, episodeIndex: episodeIndex, progress: position, duration: duration)
                 }
             )
