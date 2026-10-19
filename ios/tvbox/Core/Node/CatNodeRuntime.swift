@@ -5,26 +5,26 @@ import NodeMobile
 
 /// Cat 配置包的 Node 宿主 - 对应 MiraPlay 的 NodeRunner。
 ///
-/// 启动 `catnode-bootstrap.js`（iOS 用 nodejs-mobile 在进程内运行，Mac Catalyst 以子进程
-/// 运行 App 包里的官方 node），再由它 `require` 配置包的
+/// 启动 `catnode-bootstrap.js`（iOS 用 nodejs-mobile 在进程内运行，Mac（Catalyst 和原生
+/// macOS）以子进程运行 App 包里的官方 node），再由它 `require` 配置包的
 /// `index.js` / `index.config.js`。配置包自己在本机起 HTTP 服务，站点、网盘、
 /// 配置中心都通过这个服务访问，iOS 侧不再逐个重写站点逻辑。
 actor CatNodeRuntime {
     static let shared = CatNodeRuntime()
 
     /// 当前平台是否带有 Node 运行时。NodeMobile 只提供 iOS 设备和模拟器切片，
-    /// Mac Catalyst 使用 `scripts/fetch-node-macos.sh` 下载并打包进 App 的 node。
+    /// Mac 使用 `scripts/fetch-node-macos.sh` 下载并打包进 App 的 node。
     static var isSupported: Bool {
         #if canImport(NodeMobile)
         return true
-        #elseif targetEnvironment(macCatalyst)
+        #elseif os(macOS) || targetEnvironment(macCatalyst)
         return nodeExecutableURL.map { FileManager.default.isExecutableFile(atPath: $0.path) } ?? false
         #else
         return false
         #endif
     }
 
-    #if targetEnvironment(macCatalyst)
+    #if os(macOS) || targetEnvironment(macCatalyst)
     /// App 包 `Contents/MacOS/node`。
     private static var nodeExecutableURL: URL? {
         Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("node")
@@ -43,8 +43,8 @@ actor CatNodeRuntime {
     }()
 
     private let dataDirectory: URL = {
-        #if targetEnvironment(macCatalyst)
-        // Catalyst 未开沙盒，Documents 是用户的 ~/Documents，改放到 Application Support 下。
+        #if os(macOS) || targetEnvironment(macCatalyst)
+        // Mac 上未开沙盒，Documents 是用户的 ~/Documents，改放到 Application Support 下。
         return FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent(Bundle.main.bundleIdentifier ?? "tvbox", isDirectory: true)
@@ -123,7 +123,7 @@ actor CatNodeRuntime {
             thread.name = "nodejs"
             thread.stackSize = 2 * 1024 * 1024
             thread.start()
-            #elseif targetEnvironment(macCatalyst)
+            #elseif os(macOS) || targetEnvironment(macCatalyst)
             guard let nodePath = Self.nodeExecutableURL?.path else {
                 throw CatNodeError.unsupported
             }
@@ -248,7 +248,7 @@ private enum NodeEngine {
 }
 #endif
 
-#if targetEnvironment(macCatalyst)
+#if os(macOS) || targetEnvironment(macCatalyst)
 private enum NodeProcess {
     /// 以子进程运行 node，标准输出/错误继承自 App，日志会出现在 Xcode 控制台。
     static func spawn(arguments: [String]) throws {

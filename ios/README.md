@@ -19,7 +19,7 @@ This directory contains the SwiftUI port of the Android TVBox app.
 
   ```sh
   ios/scripts/fetch-nodemobile.sh   # iOS: nodejs-mobile framework
-  ios/scripts/fetch-node-macos.sh   # Mac Catalyst: official Node.js (arm64)
+  ios/scripts/fetch-node-macos.sh   # Mac (Catalyst / native): official Node.js (arm64)
   ```
 
 ## Cat Bundles Through Node
@@ -27,7 +27,7 @@ This directory contains the SwiftUI port of the Android TVBox app.
 Cat config bundles (`index.js.md5` entries) run inside an embedded Node.js, the same way MiraPlay does:
 
 - `CatNodeRuntime` starts Node once with `Resources/catnode-bootstrap.js`, downloads `index.js` + `index.config.js`, and loads them.
-- iOS runs Node in-process through nodejs-mobile. Mac Catalyst spawns the official `node` binary embedded at `Contents/MacOS/node` as a child process, which exits when the app quits. Node data lives in `Documents/catnode` on iOS and `~/Library/Application Support/<bundle id>/catnode` on Mac.
+- iOS runs Node in-process through nodejs-mobile. Mac (Catalyst and the native macOS build) spawns the official `node` binary embedded at `Contents/MacOS/node` as a child process, which exits when the app quits. Node data lives in `Documents/catnode` on iOS and `~/Library/Application Support/<bundle id>/catnode` on Mac.
 - The bundle serves its own HTTP API on `127.0.0.1:9988` (or the next free port). Site list comes from `/config`, sites go through `CatNodeSpider` (`/spider/{key}/{type}/*`), and the config center is the bundle's `/website` page (Settings → 配置中心).
 - When Node fails to start or the bundle fails to load, the app falls back to the native `WebsiteBundleNativeSpider` adapters.
 

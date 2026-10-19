@@ -9,7 +9,7 @@
 /* Begin PBXBuildFile section */
 		5A0D0E012F00000000000002 /* NodeMobile.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5A0D0E012F00000000000001 /* NodeMobile.xcframework */; platformFilters = (ios, ); };
 		5A0D0E012F00000000000003 /* NodeMobile.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 5A0D0E012F00000000000001 /* NodeMobile.xcframework */; platformFilters = (ios, ); settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		5A0D0E012F00000000000006 /* node in Embed Node */ = {isa = PBXBuildFile; fileRef = 5A0D0E012F00000000000005 /* node */; platformFilters = (maccatalyst, ); settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		5A0D0E012F00000000000006 /* node in Embed Node */ = {isa = PBXBuildFile; fileRef = 5A0D0E012F00000000000005 /* node */; platformFilters = (maccatalyst, macos, ); settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
