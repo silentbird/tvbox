@@ -30,6 +30,13 @@ extension Color {
     static var tvboxSystemGray5: Color {
         #if canImport(UIKit)
         Color(uiColor: UIColor.systemGray5)
+        #elseif canImport(AppKit)
+        // AppKit 没有 systemGray5，按 iOS 的浅色/深色取值，否则深色模式下是浅灰底配白字
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor(red: 0.173, green: 0.173, blue: 0.180, alpha: 1)
+                : NSColor(red: 0.898, green: 0.898, blue: 0.918, alpha: 1)
+        })
         #else
         Color(red: 0.82, green: 0.82, blue: 0.84)
         #endif
