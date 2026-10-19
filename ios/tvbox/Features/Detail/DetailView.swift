@@ -9,7 +9,10 @@ struct DetailView: View {
     
     var body: some View {
         Group {
-            if let configCenterURL {
+            if isCatNodeConfigCenterMovie {
+                CatNodeConfigCenterView()
+                    .tvboxInlineNavigationBarTitle()
+            } else if let configCenterURL {
                 ConfigCenterWebView(urlString: configCenterURL)
                     .tvboxInlineNavigationBarTitle()
             } else {
@@ -29,6 +32,11 @@ struct DetailView: View {
 
         let siteAPI = ApiConfig.shared.currentSite?.api.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return siteAPI.isEmpty ? nil : siteAPI
+    }
+
+    /// Node 运行的配置包「配置|中心」站点首页卡片，直接打开配置包自带的 `/website`。
+    private var isCatNodeConfigCenterMovie: Bool {
+        movie.vodId == "config-center" && ApiConfig.shared.currentSite?.catNodeApi != nil
     }
 
     private var isConfigCenterMovie: Bool {
