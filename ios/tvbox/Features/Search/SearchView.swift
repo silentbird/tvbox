@@ -253,8 +253,8 @@ class SearchViewModel: ObservableObject {
     // MARK: - Hot Keywords
     // 对应 Android SearchActivity: 热词取豆瓣热门剧集，失败时用默认热词
 
-    private static let hotSearchURL = URL(string: "https://movie.douban.com/j/search_subjects?type=tv&tag=%E7%83%AD%E9%97%A8&sort=recommend&page_limit=20&page_start=0")!
-    private static let defaultHotKeywords = ["家业", "主角", "低智商犯罪", "苏超", "书卷一梦", "美人余", "藏海传", "长安的荔枝", "庆余年", "凡人修仙传"]
+    private nonisolated static let hotSearchURL = URL(string: "https://movie.douban.com/j/search_subjects?type=tv&tag=%E7%83%AD%E9%97%A8&sort=recommend&page_limit=20&page_start=0")!
+    private nonisolated static let defaultHotKeywords = ["家业", "主角", "低智商犯罪", "苏超", "书卷一梦", "美人余", "藏海传", "长安的荔枝", "庆余年", "凡人修仙传"]
     /// 热词只请求一次，App 运行期间复用
     private static var hotKeywordsTask: Task<[String], Never>?
 
