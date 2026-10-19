@@ -88,8 +88,8 @@ class ApiConfig: ObservableObject {
                 AppLogger.debug("[ApiConfig] 从缓存加载配置，数据长度: \(cachedData.count)")
                 do {
                     await SpiderManager.shared.clearAll()
-                    try await MainActor.run {
-                        try parseConfig(scriptContent: cachedData, apiUrl: apiUrl)
+                    try await applyConfig(cachedData)
+                    await MainActor.run {
                         isLoading = false
                         configLoaded = true
                     }
@@ -102,18 +102,18 @@ class ApiConfig: ObservableObject {
                 }
             }
             
-            let jsonString = try await loadConfigContent(normalizedUrl: configUrl)
-            AppLogger.debug("[ApiConfig] 配置内容加载完成，响应长度: \(jsonString.count)")
+            let configContent = try await loadConfigContent(normalizedUrl: configUrl)
+            AppLogger.debug("[ApiConfig] 配置内容加载完成，响应长度: \(configContent.count)")
             
             // 缓存配置
-            cacheConfig(jsonString, for: apiUrl)
+            cacheConfig(configContent, for: apiUrl)
             AppLogger.debug("[ApiConfig] 配置已缓存")
             
             // 解析配置 (在主线程上执行，因为会修改 @Published 属性)
             AppLogger.debug("[ApiConfig] 开始解析配置...")
             await SpiderManager.shared.clearAll()
-            try await MainActor.run {
-                try parseConfig(scriptContent: jsonString, apiUrl: apiUrl)
+            try await applyConfig(configContent)
+            await MainActor.run {
                 isLoading = false
                 configLoaded = true
             }
@@ -236,7 +236,13 @@ class ApiConfig: ObservableObject {
         
         AppLogger.debug("[ApiConfig] 创建的URL对象: \(url.absoluteString)")
         AppLogger.debug("[ApiConfig] 开始网络请求...")
-        return try await httpUtil.string(url: url)
+        let content = try await httpUtil.string(url: url)
+        if isConfigCenterHTML(content),
+           let fullConfigURL = makeConfigCenterFullConfigURL(from: url) {
+            AppLogger.debug("[ApiConfig] 检测到配置中心页面，改为读取 full-config: \(fullConfigURL.absoluteString)")
+            return try await httpUtil.string(url: fullConfigURL)
+        }
+        return content
     }
     
     /// 将 URL 字符串转换为 URL 对象（支持中文域名）
@@ -308,20 +314,80 @@ class ApiConfig: ObservableObject {
         return URL(string: encodedUrlString)
     }
     
+    /// 解析配置。有 Node 运行时时，Cat 配置包交给配置包自己的 `/config` 提供站点列表，
+    /// 启动失败再回退到原生适配。
+    private func applyConfig(_ content: String) async throws {
+        if CatNodeRuntime.isSupported, isWebsiteBundleSource(content) || isCatNodeBundle(content) {
+            let scriptUrl = normalizeUrl(apiUrl)
+            do {
+                let siteConfig = try await CatNodeRuntime.shared.load(scriptContent: content, scriptUrl: scriptUrl)
+                try await MainActor.run {
+                    try parseCatNodeConfig(siteConfig, scriptUrl: scriptUrl)
+                }
+                return
+            } catch {
+                AppLogger.debug("[ApiConfig] Node 运行配置包失败，回退原生适配: \(error.localizedDescription)")
+            }
+        }
+
+        try await MainActor.run {
+            try parseConfig(scriptContent: content, apiUrl: apiUrl)
+        }
+    }
+
     private func parseConfig(scriptContent: String, apiUrl: String) throws {
         AppLogger.debug("[parseConfig] 开始解析配置...")
         
-        guard isWebsiteBundleSource(scriptContent) else {
-            AppLogger.debug("[parseConfig] 不支持的配置源内容前200字符: \(String(scriptContent.prefix(200)))")
-            throw ConfigError.invalidData
+        if isWebsiteBundleSource(scriptContent) {
+            parseJavaScriptSourceConfig(scriptContent: scriptContent, scriptUrl: normalizeUrl(apiUrl))
+            return
+        }
+
+        if isConfigCenterFullConfig(scriptContent) {
+            try parseConfigCenterFullConfig(scriptContent: scriptContent, sourceUrl: normalizeUrl(apiUrl))
+            return
         }
         
-        parseJavaScriptSourceConfig(scriptContent: scriptContent, scriptUrl: normalizeUrl(apiUrl))
+        AppLogger.debug("[parseConfig] 不支持的配置源内容前200字符: \(String(scriptContent.prefix(200)))")
+        throw ConfigError.invalidData
     }
     
     private func isWebsiteBundleSource(_ content: String) -> Bool {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.hasPrefix("globalThis.websiteBundle")
+    }
+
+    /// esbuild 打包的 Cat 配置包（CommonJS），只能在 Node 中运行
+    private func isCatNodeBundle(_ content: String) -> Bool {
+        content.contains("catServerFactory")
+    }
+
+    private func isConfigCenterHTML(_ content: String) -> Bool {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("<!DOCTYPE html>") || trimmed.hasPrefix("<html") else {
+            return false
+        }
+        return trimmed.contains("/full-config") && trimmed.contains("/website")
+    }
+
+    private func isConfigCenterFullConfig(_ content: String) -> Bool {
+        guard let data = content.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let video = object["video"] as? [String: Any],
+              video["sites"] is [[String: Any]] else {
+            return false
+        }
+        return true
+    }
+
+    private func makeConfigCenterFullConfigURL(from url: URL) -> URL? {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+        components.path = "/full-config"
+        components.query = nil
+        components.fragment = nil
+        return components.url
     }
     
     private func parseJavaScriptSourceConfig(scriptContent: String, scriptUrl: String) {
@@ -365,6 +431,262 @@ class ApiConfig: ObservableObject {
         defaultParse = nil
         
         AppLogger.debug("[parseConfig] JS 视频源配置解析完成，站点数: \(sites.count), 当前站点: \(currentSite?.key ?? "nil"), 站点: \(sites.map(\.key).joined(separator: ","))")
+    }
+
+    private struct ConfigCenterFullConfig: Decodable {
+        let video: VideoConfig?
+
+        struct VideoConfig: Decodable {
+            let sites: [SiteBean]?
+            let danmuSearchUrl: String?
+        }
+    }
+
+    private func parseConfigCenterFullConfig(scriptContent: String, sourceUrl: String) throws {
+        AppLogger.debug("[parseConfig] 检测到配置中心 full-config，按配置中心站源处理: \(sourceUrl)")
+
+        guard let data = scriptContent.data(using: .utf8) else {
+            throw ConfigError.invalidData
+        }
+
+        do {
+            let config = try JSONDecoder().decode(ConfigCenterFullConfig.self, from: data)
+            let rawSites = config.video?.sites ?? []
+            guard !rawSites.isEmpty else {
+                throw ConfigError.invalidData
+            }
+
+            let baseURL = originURLString(for: sourceUrl)
+
+            spider = ""
+            wallpaper = ""
+            parses = []
+            liveConfigs = []
+            vipParseFlags = []
+            hosts = [:]
+            adHosts = []
+            loadDefaultAds()
+
+            sites = rawSites.map {
+                configCenterSite(from: $0, sourceUrl: sourceUrl, baseURL: baseURL)
+            }
+
+            let savedHomeKey = userDefaults.string(forKey: Keys.homeApi)
+            let preferredSite = sites.first(where: \.isWebsiteBundleAdapted)
+                ?? sites.first(where: \.isWebsiteBundleContentSource)
+                ?? sites.first
+            let savedSite = sites.first { $0.key == savedHomeKey && isSelectableContentSite($0) }
+            currentSite = savedSite ?? preferredSite ?? sites.first
+            if let currentSite {
+                userDefaults.set(currentSite.key, forKey: Keys.homeApi)
+            }
+            defaultParse = nil
+
+            if let danmuSearchUrl = config.video?.danmuSearchUrl {
+                AppLogger.debug("[parseConfig] 配置中心弹幕搜索接口: \(danmuSearchUrl)")
+            }
+            AppLogger.debug("[parseConfig] 配置中心解析完成，站点数: \(sites.count), 当前站点: \(currentSite?.key ?? "nil"), 站点: \(sites.map(\.key).joined(separator: ","))")
+        } catch let error as ConfigError {
+            throw error
+        } catch {
+            throw ConfigError.parseError(error)
+        }
+    }
+
+    private func parseCatNodeConfig(_ content: String, scriptUrl: String) throws {
+        AppLogger.debug("[parseConfig] 使用 Node 运行的配置包站点列表: \(scriptUrl)")
+
+        guard let data = content.data(using: .utf8) else {
+            throw ConfigError.invalidData
+        }
+
+        let config: ConfigCenterFullConfig
+        do {
+            config = try JSONDecoder().decode(ConfigCenterFullConfig.self, from: data)
+        } catch {
+            throw ConfigError.parseError(error)
+        }
+
+        let nodeSites: [SiteBean] = (config.video?.sites ?? []).compactMap { rawSite in
+            guard let spiderMeta = configCenterSpiderMeta(from: rawSite.api) else {
+                return nil
+            }
+            let extPayload: [String: Any] = [
+                "websiteBundleUrl": scriptUrl,
+                "websiteBundleKey": spiderMeta.key,
+                "websiteBundleType": spiderMeta.type,
+                "catNodeApi": rawSite.api
+            ]
+            let extData = try? JSONSerialization.data(withJSONObject: extPayload)
+            let ext = extData.flatMap { String(data: $0, encoding: .utf8) }
+
+            return SiteBean(
+                key: rawSite.key,
+                name: rawSite.name,
+                type: 8,
+                api: "\(scriptUrl)#\(rawSite.api)",
+                searchable: rawSite.searchable,
+                quickSearch: rawSite.quickSearch,
+                filterable: rawSite.filterable,
+                ext: ext,
+                jar: scriptUrl,
+                categories: rawSite.categories
+            )
+        }
+        guard !nodeSites.isEmpty else {
+            throw ConfigError.invalidData
+        }
+
+        spider = scriptUrl
+        wallpaper = ""
+        parses = []
+        liveConfigs = []
+        vipParseFlags = []
+        hosts = [:]
+        adHosts = []
+        loadDefaultAds()
+
+        sites = nodeSites
+
+        let savedHomeKey = userDefaults.string(forKey: Keys.homeApi)
+        let savedSite = sites.first { $0.key == savedHomeKey && $0.isWebsiteBundleContentSource }
+        currentSite = savedSite ?? sites.first(where: \.isWebsiteBundleContentSource) ?? sites.first
+        if let currentSite {
+            userDefaults.set(currentSite.key, forKey: Keys.homeApi)
+        }
+        defaultParse = nil
+
+        AppLogger.debug("[parseConfig] 配置包站点解析完成，站点数: \(sites.count), 当前站点: \(currentSite?.key ?? "nil")")
+    }
+
+    private func isSelectableContentSite(_ site: SiteBean) -> Bool {
+        if site.isWebsiteBundle {
+            return site.isWebsiteBundleContentSource
+        }
+        return true
+    }
+
+    private func originURLString(for urlString: String) -> String? {
+        guard let url = createURL(from: urlString),
+              let scheme = url.scheme,
+              let host = url.host else {
+            return nil
+        }
+
+        var result = "\(scheme)://"
+        if let user = url.user, !user.isEmpty {
+            result += user
+            if let password = url.password {
+                result += ":\(password)"
+            }
+            result += "@"
+        }
+        result += host
+        if let port = url.port {
+            result += ":\(port)"
+        }
+        return result
+    }
+
+    private func configCenterSite(from rawSite: SiteBean, sourceUrl: String, baseURL: String?) -> SiteBean {
+        if let spiderMeta = configCenterSpiderMeta(from: rawSite.api) {
+            return configCenterWebsiteBundleSite(
+                from: rawSite,
+                spiderMeta: spiderMeta,
+                sourceUrl: sourceUrl,
+                baseURL: baseURL
+            )
+        }
+
+        return SiteBean(
+            key: rawSite.key,
+            name: rawSite.name,
+            type: rawSite.type,
+            api: absoluteURLString(rawSite.api, baseURL: baseURL),
+            searchable: rawSite.searchable,
+            quickSearch: rawSite.quickSearch,
+            filterable: rawSite.filterable,
+            playerUrl: rawSite.playerUrl,
+            ext: rawSite.ext,
+            jar: rawSite.jar.map { absoluteURLString($0, baseURL: baseURL) },
+            playerType: rawSite.playerType,
+            categories: rawSite.categories,
+            click: rawSite.click
+        )
+    }
+
+    private func configCenterWebsiteBundleSite(
+        from rawSite: SiteBean,
+        spiderMeta: (key: String, type: Int),
+        sourceUrl: String,
+        baseURL: String?
+    ) -> SiteBean {
+        let nativeAdapter = nativeAdapter(forWebsiteBundleKey: spiderMeta.key)
+        let isAdapted = nativeAdapter != nil
+        let remoteApi = absoluteURLString(rawSite.api, baseURL: baseURL)
+        let unsupportedReason = isAdapted ? "" : "此配置中心子站点尚未适配: \(rawSite.name) (\(spiderMeta.key))"
+        let extPayload: [String: Any] = [
+            "websiteBundleUrl": sourceUrl,
+            "websiteBundleKey": spiderMeta.key,
+            "websiteBundleType": spiderMeta.type,
+            "nativeAdapter": nativeAdapter ?? "",
+            "isAdapted": isAdapted,
+            "unsupportedReason": unsupportedReason,
+            "configCenterUrl": baseURL ?? "",
+            "configCenterApi": remoteApi
+        ]
+        let extData = try? JSONSerialization.data(withJSONObject: extPayload)
+        let ext = extData.flatMap { String(data: $0, encoding: .utf8) }
+
+        return SiteBean(
+            key: rawSite.key,
+            name: rawSite.name,
+            type: 8,
+            api: "\(sourceUrl)#/spider/\(spiderMeta.key)/\(spiderMeta.type)",
+            searchable: isAdapted ? rawSite.searchable : 0,
+            quickSearch: isAdapted ? rawSite.quickSearch : 0,
+            filterable: isAdapted ? rawSite.filterable : 0,
+            playerUrl: rawSite.playerUrl,
+            ext: ext,
+            jar: sourceUrl,
+            playerType: rawSite.playerType,
+            categories: rawSite.categories,
+            click: rawSite.click
+        )
+    }
+
+    private func configCenterSpiderMeta(from api: String) -> (key: String, type: Int)? {
+        let path: String
+        if let url = URL(string: api), url.scheme != nil {
+            path = url.path
+        } else {
+            path = api.components(separatedBy: "?").first?
+                .components(separatedBy: "#").first ?? api
+        }
+
+        let pattern = #"^/spider/([^/]+)/(\d+)$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: path, range: NSRange(path.startIndex..<path.endIndex, in: path)),
+              let keyRange = Range(match.range(at: 1), in: path),
+              let typeRange = Range(match.range(at: 2), in: path),
+              let type = Int(path[typeRange]) else {
+            return nil
+        }
+
+        return (String(path[keyRange]), type)
+    }
+
+    private func absoluteURLString(_ value: String, baseURL: String?) -> String {
+        if URL(string: value)?.scheme != nil {
+            return value
+        }
+        guard let baseURL, !baseURL.isEmpty else {
+            return value
+        }
+        if value.hasPrefix("/") {
+            return "\(baseURL)\(value)"
+        }
+        return "\(baseURL)/\(value)"
     }
 
     private func resolveSelectableSite(_ site: SiteBean) -> SiteBean {
@@ -1070,7 +1392,8 @@ class ApiConfig: ObservableObject {
             WebsiteBundleSiteMeta(key: "wexDuBoKu", name: "🌺独播|秒播🌺", type: 3, nativeAdapter: "wexDuBoKu"),
             WebsiteBundleSiteMeta(key: "wexYueYue", name: "🌺悦悦|秒播🌺", type: 3, nativeAdapter: nil),
             WebsiteBundleSiteMeta(key: "duanjuweiguan", name: "🍉短剧|小薇🍉", type: 3, nativeAdapter: nil),
-            WebsiteBundleSiteMeta(key: "hanxiaoquan", name: "🌺韩剧|秒播🌺", type: 3, nativeAdapter: nil)
+            WebsiteBundleSiteMeta(key: "hanxiaoquan", name: "🌺韩剧|秒播🌺", type: 3, nativeAdapter: nil),
+            WebsiteBundleSiteMeta(key: "wodequark", name: "💽我的夸克💽", type: 3, nativeAdapter: "wodequark")
         ]
     }
 

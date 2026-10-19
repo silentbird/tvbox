@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @StateObject private var viewModel = SettingsViewModel()
+    @ObservedObject private var apiConfig = ApiConfig.shared
     @State private var showApiInput = false
     @State private var showLiveApiInput = false
     @State private var showSiteSelector = false
@@ -142,6 +143,13 @@ struct SettingsView: View {
             }
             .foregroundColor(.primary)
             .disabled(viewModel.isRefreshing)
+
+            // 配置中心（Node 运行的配置包自带网页）
+            if apiConfig.sites.contains(where: { $0.catNodeApi != nil }) {
+                NavigationLink(destination: CatNodeConfigCenterView()) {
+                    Label("配置中心", systemImage: "slider.horizontal.3")
+                }
+            }
         } header: {
             Text("配置管理")
         }

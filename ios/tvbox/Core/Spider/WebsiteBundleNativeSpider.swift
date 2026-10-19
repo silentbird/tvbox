@@ -9,6 +9,8 @@ enum WebsiteBundleNativeSpiderFactory {
         }
 
         switch adapter {
+        case "baseset":
+            return ConfigCenterNativeSpider(site: site)
         case "wexDuBoKu":
             return WexDuBoKuNativeSpider(site: site)
         case "wexYueYue":
@@ -25,6 +27,8 @@ enum WebsiteBundleNativeSpiderFactory {
             return BookWuWeiNativeSpider(site: site)
         case "bili":
             return BiliNativeSpider(site: site)
+        case "wodequark":
+            return WodeQuarkNativeSpider(site: site)
         default:
             return nil
         }
@@ -36,6 +40,7 @@ enum WebsiteBundleNativeSpiderFactory {
     }
 
     static let supportedKeys: Set<String> = [
+        "baseset",
         "wexDuBoKu",
         "wexYueYue",
         "animemodu",
@@ -43,7 +48,8 @@ enum WebsiteBundleNativeSpiderFactory {
         "duanjuweiguan",
         "hanxiaoquan",
         "bookWuWei",
-        "bili"
+        "bili",
+        "wodequark"
     ]
 
     private static func adapterKey(for site: SiteBean) -> String? {
@@ -60,6 +66,12 @@ enum WebsiteBundleNativeSpiderFactory {
             site.api.contains("/spider/wexDuBoKu/") ||
             site.api.contains("#/spider/wexDuBoKu/") {
             return "wexDuBoKu"
+        }
+
+        if site.key == "nodejs_wodequark" ||
+            site.api.contains("/spider/wodequark/") ||
+            site.api.contains("#/spider/wodequark/") {
+            return "wodequark"
         }
 
         // 其它适配器仅通过 ext.nativeAdapter 匹配，避免误识别。

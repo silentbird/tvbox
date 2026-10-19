@@ -90,6 +90,9 @@ actor SpiderManager {
             throw SpiderError.unsupported("远程类型站点暂不支持")
             
         case 8:
+            if let catNodeApi = site.catNodeApi {
+                return CatNodeSpider(site: site, apiPath: catNodeApi)
+            }
             return WebsiteBundleSpider(site: site)
             
         default:

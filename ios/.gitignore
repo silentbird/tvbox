@@ -6,3 +6,6 @@ DerivedData/
 .swiftpm/configuration/registries.json
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .netrc
+
+# nodejs-mobile 预编译框架，由 scripts/fetch-nodemobile.sh 下载
+Vendor/

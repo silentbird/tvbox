@@ -19,7 +19,13 @@ final class BiliNativeSpider: WebsiteBundleNativeSpider {
     }
 
     func initialize(ext: String?) async throws {
-        await bootstrapCookie()
+        let configuredCookie = ConfigCenterRuntime.cookie(for: "/bili/cookie")
+        if configuredCookie.isEmpty {
+            await bootstrapCookie()
+        } else {
+            cookie = configuredCookie
+            AppLogger.debug("[BiliNativeSpider] 使用配置中心 Bili Cookie")
+        }
         await bootstrapLoginStatus()
         isInitialized = true
     }
@@ -134,7 +140,7 @@ final class BiliNativeSpider: WebsiteBundleNativeSpider {
             "vod_name": title,
             "vod_pic": pic,
             "type_name": tname,
-            "vod_remarks": Self.formatDuration(duration),
+            "vod_remarks": Self.formatDuration(duration) ?? "",
             "vod_content": desc
         ]
         if !episodes.isEmpty {

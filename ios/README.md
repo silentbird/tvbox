@@ -15,6 +15,19 @@ This directory contains the SwiftUI port of the Android TVBox app.
 - Verified locally with Xcode 26.4.1 (17E202).
 - iOS deployment target: 17.0.
 - Swift version: 5.0, as configured in the Xcode project.
+- nodejs-mobile framework (not committed). Run once before the first build:
+
+  ```sh
+  ios/scripts/fetch-nodemobile.sh
+  ```
+
+## Cat Bundles Through Node
+
+Cat config bundles (`index.js.md5` entries) run inside an embedded Node.js (nodejs-mobile), the same way MiraPlay does:
+
+- `CatNodeRuntime` starts Node once with `Resources/catnode-bootstrap.js`, downloads `index.js` + `index.config.js`, and loads them.
+- The bundle serves its own HTTP API on `127.0.0.1:9988` (or the next free port). Site list comes from `/config`, sites go through `CatNodeSpider` (`/spider/{key}/{type}/*`), and the config center is the bundle's `/website` page (Settings → 配置中心).
+- NodeMobile has no Mac Catalyst slice. On Catalyst, and when Node fails to start, the app falls back to the native `WebsiteBundleNativeSpider` adapters.
 
 ## Open The Project
 
