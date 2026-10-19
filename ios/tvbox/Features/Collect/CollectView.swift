@@ -69,19 +69,23 @@ struct CollectItemCard: View {
         VStack(alignment: .leading, spacing: 0) {
             // 封面
             ZStack(alignment: .topTrailing) {
-                AsyncImage(url: URL(string: item.vodPic ?? "")) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    LinearGradient(
-                        colors: [Color.gray.opacity(0.3), Color.gray.opacity(0.1)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                }
-                .frame(height: 180)
-                .clipped()
+                // 图片放在 overlay 里，横图按 fill 放大时不会把卡片撑宽
+                Color.clear
+                    .frame(height: 180)
+                    .overlay {
+                        AsyncImage(url: URL(string: item.vodPic ?? "")) { image in
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                        } placeholder: {
+                            LinearGradient(
+                                colors: [Color.gray.opacity(0.3), Color.gray.opacity(0.1)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        }
+                    }
+                    .clipped()
                 
                 // 站点标签
                 Text(item.siteName)

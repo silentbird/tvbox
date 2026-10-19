@@ -8,8 +8,12 @@ struct MovieCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ZStack(alignment: .topTrailing) {
-                CachedAsyncImage(urlString: movie.vodPic)
+                // 图片放在 overlay 里，横图按 fill 放大时不会把卡片撑宽
+                Color.clear
                     .frame(height: 180)
+                    .overlay {
+                        CachedAsyncImage(urlString: movie.vodPic)
+                    }
                     .clipped()
 
                 if let remarks = movie.vodRemarks, !remarks.isEmpty {
