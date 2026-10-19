@@ -15,6 +15,7 @@ struct CategoryDetailView: View {
                     NavigationLink(destination: DetailView(movie: movie)) {
                         MovieCard(movie: movie)
                     }
+                    .buttonStyle(.plain)
                     .onAppear {
                         viewModel.loadMoreIfNeeded(current: movie)
                     }

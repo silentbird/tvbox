@@ -7,6 +7,9 @@ private class HomeContentViewCounter {
 struct HomeContentView: View {
     @ObservedObject private var apiConfig = ApiConfig.shared
     @StateObject private var viewModel = HomeContentViewModel()
+    @Environment(\.tvboxWideLayout) private var isWideLayout
+    /// 宽布局下当前选中的分类，nil 表示「首页」推荐
+    @State private var selectedCategory: MovieCategory?
 
     var body: some View {
         let _ = {
@@ -14,47 +17,15 @@ struct HomeContentView: View {
             AppLogger.debug("[HomeContentView] body #\(HomeContentViewCounter.count)")
         }()
 
-        ZStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    if let error = viewModel.error {
-                        unsupportedState(error)
-                    }
-
-                    if !viewModel.categories.isEmpty {
-                        siteCategorySection
-                    }
-
-                    if !viewModel.recommendMovies.isEmpty {
-                        recommendSection
-                    }
-
-                    if viewModel.categories.isEmpty && viewModel.recommendMovies.isEmpty && viewModel.error == nil && !viewModel.isLoading {
-                        ForEach(viewModel.doubanCategories) { category in
-                            DoubanCategoryRow(category: category)
-                        }
-                    }
-                }
-                .padding(.top, 82)
-                .padding(.bottom, 8)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            if viewModel.isLoading && viewModel.categories.isEmpty && viewModel.recommendMovies.isEmpty && viewModel.doubanCategories.isEmpty {
-                VStack(spacing: 12) {
-                    ProgressView()
-                        .scaleEffect(1.2)
-                    Text("加载中...")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
+        Group {
+            if isWideLayout {
+                wideBody
+            } else {
+                narrowBody
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.tvboxSystemGroupedBackground.ignoresSafeArea())
-        .overlay(alignment: .top) {
-            homeTopBar
-        }
         .tvboxHiddenNavigationBar()
         .refreshable {
             await viewModel.refresh()
@@ -65,8 +36,125 @@ struct HomeContentView: View {
         }
         .onChange(of: apiConfig.currentSite?.key) { _, newValue in
             AppLogger.debug("[HomeContentView] onChange currentSite: \(newValue ?? "nil")")
+            selectedCategory = nil
             viewModel.loadData()
         }
+    }
+
+    private var narrowBody: some View {
+        ZStack {
+            ScrollView {
+                homeSections
+                    .padding(.top, 82)
+                    .padding(.bottom, 8)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            loadingState
+        }
+        .overlay(alignment: .top) {
+            homeTopBar
+        }
+    }
+
+    // 对应 Android HomeActivity: 顶部一行分类，下面原地显示选中分类的内容
+    private var wideBody: some View {
+        VStack(spacing: 0) {
+            wideCategoryBar
+
+            Divider()
+
+            if let category = selectedCategory {
+                CategoryDetailView(category: category)
+                    .id(category.tid)
+            } else {
+                ZStack {
+                    ScrollView {
+                        homeSections
+                            .padding(.vertical)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    loadingState
+                }
+            }
+        }
+    }
+
+    private var homeSections: some View {
+        VStack(spacing: 20) {
+            if let error = viewModel.error {
+                unsupportedState(error)
+            }
+
+            // 宽布局的分类在顶部标签栏里
+            if !viewModel.categories.isEmpty && !isWideLayout {
+                siteCategorySection
+            }
+
+            if !viewModel.recommendMovies.isEmpty {
+                recommendSection
+            }
+
+            if viewModel.categories.isEmpty && viewModel.recommendMovies.isEmpty && viewModel.error == nil && !viewModel.isLoading {
+                ForEach(viewModel.doubanCategories) { category in
+                    DoubanCategoryRow(category: category)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var loadingState: some View {
+        if viewModel.isLoading && viewModel.categories.isEmpty && viewModel.recommendMovies.isEmpty && viewModel.doubanCategories.isEmpty {
+            VStack(spacing: 12) {
+                ProgressView()
+                    .scaleEffect(1.2)
+                Text("加载中...")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private var wideCategoryBar: some View {
+        HStack(spacing: 12) {
+            siteSelector
+
+            Divider()
+                .frame(height: 18)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    categoryTab(title: "首页", isSelected: selectedCategory == nil) {
+                        selectedCategory = nil
+                    }
+
+                    ForEach(viewModel.categories) { category in
+                        categoryTab(title: category.name, isSelected: selectedCategory == category) {
+                            selectedCategory = category
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+    }
+
+    private func categoryTab(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline)
+                .fontWeight(isSelected ? .semibold : .regular)
+                .foregroundColor(isSelected ? .white : .primary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(isSelected ? Color.blue : Color.clear)
+                .cornerRadius(8)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var homeTopBar: some View {
@@ -161,6 +249,11 @@ struct HomeContentView: View {
             }
             .foregroundColor(.primary)
         }
+        // macOS 默认画成带边框和系统箭头的弹出按钮
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
     }
 
     private var siteCategorySection: some View {
@@ -181,6 +274,7 @@ struct HomeContentView: View {
                         .background(Color.tvboxSystemGray6)
                         .cornerRadius(12)
                     }
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal)
@@ -199,6 +293,7 @@ struct HomeContentView: View {
                     NavigationLink(destination: DetailView(movie: movie)) {
                         MovieCard(movie: movie)
                     }
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal)

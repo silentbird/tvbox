@@ -39,6 +39,7 @@ struct DoubanCategoryRow: View {
                             NavigationLink(destination: DetailView(movie: movie)) {
                                 DoubanMovieCard(movie: movie)
                             }
+                            .buttonStyle(.plain)
                         }
                     }
                     .padding(.horizontal)
