@@ -205,7 +205,7 @@ struct LivePlayerView: View {
             
             // 视频播放器
             if let player = viewModel.player {
-                VideoPlayer(player: player)
+                PlayerLayerView(player: player)
                     .ignoresSafeArea()
                     .onTapGesture {
                         withAnimation {
