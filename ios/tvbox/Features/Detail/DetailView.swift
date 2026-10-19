@@ -8,6 +8,44 @@ struct DetailView: View {
     @State private var selectedEpisode: VodInfo.VodPlayItem?
     
     var body: some View {
+        Group {
+            if isCatNodeConfigCenterMovie {
+                CatNodeConfigCenterView()
+                    .tvboxInlineNavigationBarTitle()
+            } else if let configCenterURL {
+                ConfigCenterWebView(urlString: configCenterURL)
+                    .tvboxInlineNavigationBarTitle()
+            } else {
+                detailContent
+            }
+        }
+    }
+
+    private var configCenterURL: String? {
+        guard isConfigCenterMovie else {
+            return nil
+        }
+
+        if let url = movie.vodPlayUrl, !url.isEmpty {
+            return url
+        }
+
+        let siteAPI = ApiConfig.shared.currentSite?.api.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return siteAPI.isEmpty ? nil : siteAPI
+    }
+
+    /// Node 运行的配置包「配置|中心」站点首页卡片，直接打开配置包自带的 `/website`。
+    private var isCatNodeConfigCenterMovie: Bool {
+        movie.vodId == "config-center" && ApiConfig.shared.currentSite?.catNodeApi != nil
+    }
+
+    private var isConfigCenterMovie: Bool {
+        movie.vodTag == "config_center" ||
+            movie.vodId == "config_center" ||
+            (movie.typeName == "配置" && movie.vodName.contains("配置"))
+    }
+
+    private var detailContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 // 顶部封面区域

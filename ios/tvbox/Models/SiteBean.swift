@@ -112,7 +112,14 @@ struct SiteBean: Decodable, Identifiable, Hashable {
 
         return adapter
     }
-    var isWebsiteBundleAdapted: Bool { websiteBundleNativeAdapter != nil }
+    /// 由 Node 宿主运行的配置包站点接口路径，例如 `/spider/wexDuBoKu/3`。
+    var catNodeApi: String? {
+        guard let api = websiteBundleExtPayload?["catNodeApi"] as? String, !api.isEmpty else {
+            return nil
+        }
+        return api
+    }
+    var isWebsiteBundleAdapted: Bool { websiteBundleNativeAdapter != nil || catNodeApi != nil }
 
     /// WebsiteBundle 内部的 meta.type，用于识别站点类别。
     /// 约定（参考 Cat 源）：1/2/3 为内容源（电影、动漫、短剧等），4 为配置/推送类（baseset、push）。

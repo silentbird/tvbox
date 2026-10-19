@@ -94,8 +94,23 @@
 - [x] JsSpider - JavaScriptCore
 - [x] QuickJSSpider fallback
 - [x] WebsiteBundleSpider fallback
+- [x] 内嵌 nodejs-mobile 运行 Cat 配置包（`CatNodeRuntime` + `CatNodeSpider`），站点列表读配置包 `/config`，配置中心用 `/website`；Catalyst 回退原生适配。
+- [x] 模拟器用真实配置包（`https://9280.kstore.vip/cat/index.js.md5`）验证：96 个站点，豆瓣首页/分类、多站搜索、详情、直连站播放地址正常。
+- [ ] 界面上点通详情 → 播放，以及设置 → 配置中心里扫码登录夸克后的网盘播放；真机再验证一遍。
+- [x] Mac Catalyst 以子进程运行 App 包内的官方 node（`scripts/fetch-node-macos.sh`），与 iOS 共用宿主脚本和 `CatNodeSpider`。
+- [ ] Node 宿主：App 回到前台时检查配置包服务存活，必要时重新加载；Mac 上 node 子进程意外退出后重新拉起。
+- [ ] Mac 上架前：开启 App Sandbox 后验证 node 子进程（继承沙盒）；Intel Mac 需要 x86_64 版 node。
 - [x] WebsiteBundleNativeSpider - `wexDuBoKu`
 - [x] WebsiteBundleNativeSpider - `wexYueYue`、`animemodu`、`dongli`、`duanjuweiguan`、`hanxiaoquan`、`bookWuWei`、`bili`（mp4 flag）
+- [x] 配置中心运行时读取层 `ConfigCenterRuntime`，供原生 spider 在 `playerContent` 阶段读取 Cookie/Token/账号。
+- [x] 配置中心扫码登录方案一：当入口是真实 `/website`/`/full-config` 配置中心服务时，优先展示 MiraPlay 同款直接二维码，二维码加载成功后自动检测并保存 Cookie/Token 到本地。
+- [x] 普通 WebsiteBundle 源的原生扫码登录初版：不依赖 MiraPlay 本地 Node 后端，百度、夸克、UC Cookie、115、Bili 走网页登录扫码并自动保存 Cookie。
+- [ ] 搬运 UC TV token、Ali refresh token/open token 等 provider 专属扫码接口。
+- [x] `bili` 原生 spider 优先使用配置中心 `/bili/cookie`。
+- [x] `wodequark` 个人网盘站点初版：读取 `/quark/cookie`，列目录/文件夹详情聚合视频，播放时换取夸克直链。
+- [ ] 搬运网盘 provider: Quark、UC、115、Ali、Baidu、Tianyi、123。
+- [ ] 按 `/pans/list` 顺序做网盘 provider 分流和失败降级。
+- [ ] 适配剩余个人网盘站点: `wodebaidu`、`wode189`、`wode115`、`wode123`。
 - [ ] 对齐 Android `JarLoader`/`JsLoader` 行为，列出 iOS 无法支持的字节码/二进制格式。
 - [ ] 支持 XML 类型站点 `type = 0`。
 - [ ] 支持远程类型站点 `type = 4`。
@@ -186,6 +201,10 @@
 - [ ] 弹幕开关控制。
 
 ### 网盘/存储驱动
+- [x] MiraPlay 配置中心网盘 Cookie/Token/账号本地保存。
+- [x] 记录配置中心 token 应用链路和搬运顺序: `ios/CONFIG_CENTER_NETDISK.md`。
+- [x] 配置中心运行时读取层，统一映射百度、夸克、UC、115、天翼、123、阿里凭据。
+- [ ] 将配置中心凭据接入网盘分享解析 provider。
 - [ ] StorageDrive 数据模型。
 - [ ] DriveFolderFile 文件模型。
 - [ ] 本地目录浏览。
