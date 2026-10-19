@@ -165,9 +165,10 @@ struct SettingsView: View {
     private var playbackSection: some View {
         Section {
             // 播放器类型
-            Picker(selection: $viewModel.playerType) {
-                Text("系统播放器").tag(0)
-                Text("AVPlayer").tag(1)
+            Picker(selection: $viewModel.playerKind) {
+                ForEach(PlayerKind.allCases) { kind in
+                    Text(kind.name).tag(kind)
+                }
             } label: {
                 Label("播放器", systemImage: "play.rectangle")
             }
@@ -578,7 +579,9 @@ class SettingsViewModel: ObservableObject {
     @Published var defaultParseName: String = "未选择"
     @Published var isRefreshing = false
     
-    @Published var playerType: Int = 0
+    @Published var playerKind = PlayerKind.selected {
+        didSet { PlayerKind.selected = playerKind }
+    }
     @Published var defaultQuality: Int = 0
     @Published var backgroundPlay: Bool = false
     @Published var autoPlayNext: Bool = true
@@ -611,7 +614,6 @@ class SettingsViewModel: ObservableObject {
         calculateCacheSize()
         
         // 播放设置
-        playerType = userDefaults.integer(forKey: "player_type")
         defaultQuality = userDefaults.integer(forKey: "default_quality")
         backgroundPlay = userDefaults.bool(forKey: "background_play")
         autoPlayNext = userDefaults.object(forKey: "auto_play_next") as? Bool ?? true

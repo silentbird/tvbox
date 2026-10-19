@@ -1,5 +1,4 @@
 import SwiftUI
-import AVKit
 
 /// 剧集的真实播放地址
 typealias PlayAddress = (url: URL, headers: [String: String]?, format: String?)
@@ -28,8 +27,8 @@ struct PlayerView: View {
                 Color.black
                     .ignoresSafeArea()
                 
-                if let player = viewModel.player {
-                    VideoPlayer(player: player)
+                if let engine = viewModel.engine {
+                    engine.videoView
                         .ignoresSafeArea()
                         .onTapGesture {
                             withAnimation(.easeInOut(duration: 0.2)) {
@@ -259,7 +258,8 @@ struct PlayerView: View {
 // MARK: - Player ViewModel
 @MainActor
 class PlayerViewModel: ObservableObject {
-    @Published var player: AVPlayer?
+    /// 当前使用的播放内核
+    @Published private(set) var engine: PlaybackEngine?
     @Published var isPlaying = false
     @Published var isBuffering = false
     @Published var progress: Double = 0
@@ -271,14 +271,17 @@ class PlayerViewModel: ObservableObject {
     @Published var showToast = false
     @Published private(set) var toastMessage = ""
     
-    private var timeObserver: Any?
-    private var statusObserver: NSKeyValueObservation?
-    private var endObserver: NSObjectProtocol?
     private var resolveTask: Task<Void, Never>?
     
     private var episodes: [VodInfo.VodPlayItem] = []
     private var resolve: ((VodInfo.VodPlayItem) async throws -> PlayAddress)?
     private var onProgress: (@MainActor (Int, Double, Double) -> Void)?
+    /// 当前剧集的播放地址，切换播放器时重新加载
+    private var address: PlayAddress?
+    /// 当前剧集使用的播放器，播放失败时可能自动切换
+    private var playerKind = PlayerKind.selected
+    /// 播放内核已就绪，可以上报进度
+    private var isReady = false
     /// 准备好后需要跳转到的位置 (续播)
     private var pendingSeekPosition: Double = 0
     private var lastReportedTime: TimeInterval = 0
@@ -339,11 +342,14 @@ class PlayerViewModel: ObservableObject {
     /// 先取得真实播放地址再开始播放
     private func play(episodeIndex: Int, startPosition: Double = 0) {
         reportProgress()
-        tearDownPlayer()
+        resolveTask?.cancel()
+        tearDownEngine()
         
         self.episodeIndex = episodeIndex
         didPlayToEnd = false
         pendingSeekPosition = startPosition
+        playerKind = PlayerKind.selected
+        address = nil
         error = nil
         currentTime = 0
         duration = 0
@@ -355,7 +361,8 @@ class PlayerViewModel: ObservableObject {
                 let address = try await resolve(episode)
                 // 取地址期间已关闭播放器或切换了剧集
                 guard !Task.isCancelled else { return }
-                loadVideo(url: address.url, headers: address.headers ?? [:], format: address.format)
+                self.address = address
+                loadEngine()
             } catch {
                 guard !Task.isCancelled else { return }
                 self.error = error
@@ -363,85 +370,58 @@ class PlayerViewModel: ObservableObject {
         }
     }
     
-    private func loadVideo(url: URL, headers: [String: String], format: String?) {
-        var options: [String: Any] = [:]
-        if !headers.isEmpty {
-            options["AVURLAssetHTTPHeaderFieldsKey"] = headers
-        }
-        // 部分站点的 m3u8 地址没有扩展名，按站点给出的 format 指定类型
-        if let format, !format.isEmpty {
-            options[AVURLAssetOverrideMIMETypeKey] = format
-        }
+    /// 用当前选择的播放器加载当前剧集
+    private func loadEngine() {
+        guard let address else { return }
+        tearDownEngine()
+        error = nil
         
-        let playerItem = AVPlayerItem(asset: AVURLAsset(url: url, options: options))
-        player = AVPlayer(playerItem: playerItem)
-        
-        // 监听播放状态
-        statusObserver = playerItem.observe(\.status) { [weak self] item, _ in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                switch item.status {
-                case .readyToPlay:
-                    self.duration = item.duration.seconds
-                    if self.pendingSeekPosition > 0 {
-                        let position = self.pendingSeekPosition
-                        self.pendingSeekPosition = 0
-                        self.currentTime = position
-                        self.player?.seek(to: CMTime(seconds: position, preferredTimescale: 600))
-                    }
-                    self.player?.play()
-                    self.isPlaying = true
-                    // 开始播放就记一条历史
-                    self.reportProgress()
-                case .failed:
-                    self.error = item.error
-                default:
-                    break
-                }
+        let engine = playerKind.makeEngine()
+        engine.onEvent = { [weak self] event in
+            self?.handle(event)
+        }
+        engine.load(url: address.url, headers: address.headers ?? [:], format: address.format)
+        self.engine = engine
+    }
+    
+    private func handle(_ event: PlaybackEvent) {
+        switch event {
+        case .ready(let duration):
+            isReady = true
+            self.duration = duration
+            if pendingSeekPosition > 0 {
+                let position = pendingSeekPosition
+                pendingSeekPosition = 0
+                currentTime = position
+                engine?.seek(to: position)
             }
-        }
-        
-        // 监听播放进度
-        timeObserver = player?.addPeriodicTimeObserver(
-            forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
-            queue: .main
-        ) { [weak self] time in
-            Task { @MainActor in
-                guard let self = self,
-                      let duration = self.player?.currentItem?.duration.seconds,
-                      duration.isFinite,
-                      duration > 0 else { return }
-                
-                self.currentTime = time.seconds
-                self.progress = time.seconds / duration
-                if abs(time.seconds - self.lastReportedTime) >= Self.progressReportInterval {
-                    self.reportProgress()
-                }
+            engine?.play()
+            isPlaying = true
+            // 开始播放就记一条历史
+            reportProgress()
+        case .progress(let current, let duration):
+            currentTime = current
+            self.duration = duration
+            progress = current / duration
+            if abs(current - lastReportedTime) >= Self.progressReportInterval {
+                reportProgress()
             }
-        }
-        
-        // 监听缓冲状态
-        NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemPlaybackStalled,
-            object: playerItem,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.isBuffering = true
-            }
-        }
-        
-        // 播完清除该集进度并自动播下一集
-        endObserver = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime,
-            object: playerItem,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                guard let self else { return }
-                self.didPlayToEnd = true
-                self.reportProgress()
-                self.playNext()
+        case .buffering(let buffering):
+            isBuffering = buffering
+        case .playedToEnd:
+            // 播完清除该集进度并自动播下一集
+            didPlayToEnd = true
+            reportProgress()
+            playNext()
+        case .failed(let error):
+            // 还没开始播放就失败，多半是格式不支持，换备用播放器再试一次
+            if !isReady, let fallback = playerKind.fallback {
+                AppLogger.debug("[Player] \(playerKind.name) 播放失败，改用 \(fallback.name): \(error)")
+                playerKind = fallback
+                showToast(message: "已切换到 \(fallback.name) 播放")
+                loadEngine()
+            } else {
+                self.error = error
             }
         }
     }
@@ -449,62 +429,49 @@ class PlayerViewModel: ObservableObject {
     /// 上报当前剧集的播放进度，用于记录播放历史
     private func reportProgress() {
         // 还没开始播放时不上报，避免续播位置被 0 覆盖
-        guard player?.currentItem?.status == .readyToPlay, currentEpisode != nil else { return }
+        guard isReady, currentEpisode != nil else { return }
         lastReportedTime = currentTime
         onProgress?(episodeIndex, didPlayToEnd ? 0 : currentTime, duration.isFinite ? duration : 0)
     }
     
-    private func tearDownPlayer() {
-        resolveTask?.cancel()
-        player?.pause()
-        
-        if let observer = timeObserver {
-            player?.removeTimeObserver(observer)
-            timeObserver = nil
-        }
-        if let observer = endObserver {
-            NotificationCenter.default.removeObserver(observer)
-            endObserver = nil
-        }
-        
-        statusObserver?.invalidate()
-        player = nil
+    private func tearDownEngine() {
+        engine?.stop()
+        engine = nil
+        isReady = false
         isPlaying = false
         isBuffering = false
     }
     
     func togglePlayPause() {
-        guard let player = player else { return }
+        guard let engine else { return }
         
         if isPlaying {
-            player.pause()
+            engine.pause()
         } else {
-            player.play()
+            engine.play()
         }
         isPlaying.toggle()
     }
     
     func seek(to progress: Double) {
-        guard let player = player, duration > 0 else { return }
-        let targetTime = CMTime(seconds: progress * duration, preferredTimescale: 600)
-        player.seek(to: targetTime)
+        guard let engine, duration > 0 else { return }
+        engine.seek(to: progress * duration)
     }
     
     func seekForward() {
-        guard let player = player else { return }
-        let targetTime = CMTimeAdd(player.currentTime(), CMTime(seconds: 10, preferredTimescale: 600))
-        player.seek(to: targetTime)
+        guard let engine else { return }
+        engine.seek(to: engine.currentTime + 10)
     }
     
     func seekBackward() {
-        guard let player = player else { return }
-        let targetTime = CMTimeSubtract(player.currentTime(), CMTime(seconds: 10, preferredTimescale: 600))
-        player.seek(to: targetTime)
+        guard let engine else { return }
+        engine.seek(to: engine.currentTime - 10)
     }
     
     func cleanup() {
         reportProgress()
-        tearDownPlayer()
+        resolveTask?.cancel()
+        tearDownEngine()
     }
     
     private func formatTime(_ time: TimeInterval) -> String {

@@ -20,7 +20,10 @@ This directory contains the SwiftUI port of the Android TVBox app.
   ```sh
   ios/scripts/fetch-nodemobile.sh   # iOS: nodejs-mobile framework
   ios/scripts/fetch-node-macos.sh   # Mac (Catalyst / native): official Node.js (arm64)
+  ios/scripts/fetch-ksplayer.sh     # KSPlayer 2.3.4 + FFmpegKit, local Swift packages
   ```
+
+- KSPlayer is pinned to 2.3.4, the last fully open-source release (GPL-3.0). Later releases ship the core as a binary without iOS device support.
 
 ## Cat Bundles Through Node
 
