@@ -1,295 +1,338 @@
-# TVBox iOS/macOS 移植路线图
+# TVBox iOS/macOS 移植进度
 
-> 最后更新: 2026-05-05
-> 当前判断: Android 是主线成熟版；iOS 是 SwiftUI 移植版；macOS 建议优先走 Mac Catalyst，等核心链路稳定后再评估原生 macOS/AppKit 适配。
+> 更新: 2026-10-19
+> 对照基准: Android `android/`（提交 `97d9851`，261 个类）↔ iOS `ios/tvbox/`（提交 `3780077`）
+> 状态以实际代码为准，不以文件是否存在为准。每一步都写了「验收」，做完按验收标准自测后再勾选。
 
-## 现在最先做什么
+状态: ✅ 已完成 · 🟡 部分完成 · ❌ 未开始 · ⛔ 不移植（iOS 没有对等能力）
 
-先做 **可构建、可运行、可验证**，不要先补弹幕、网盘、远控这些大功能。
+## 总览
 
-### 当前最高优先级
+| # | 类别 | 状态 | 一句话现状 |
+|---|------|------|-----------|
+| 1 | 配置解析 | 🟡 | 只支持 Cat 配置包和配置中心 full-config；**标准 TVBox JSON 配置已不支持** |
+| 2 | 站点/爬虫 | 🟡 | Cat 配置包走 Node 可用；JSON(type 1)、JS(type 3) Spider 在但缺配置入口；XML、jar、py 不支持 |
+| 3 | 首页与分类 | 🟡 | 首页、豆瓣推荐、分类分页可用；缺筛选 |
+| 4 | 搜索 | 🟡 | 当前站/聚合/快速搜索、历史可用；缺指定搜索源，热词是写死的 |
+| 5 | 详情 | 🟡 | 线路、剧集、收藏、续播可用；缺倒序、切源（换站点） |
+| 6 | 点播播放器 | 🟡 | AVPlayer 播放、上下集、续播、请求头可用；倍速/画质/字幕菜单是空按钮 |
+| 7 | 解析与嗅探 | 🟡 | 解析器代码齐全，但 `parses` 永远为空，需要解析的视频都会失败 |
+| 8 | 直播 | 🟡 | 解析器和界面都有，但**没有数据来源**，直播页永远为空 |
+| 9 | 历史与收藏 | ✅ | 历史（含每集进度）、收藏、搜索历史、配置历史可用 |
+| 10 | 设置 | 🟡 | 配置/站点/解析/配置中心可用；播放设置不保存也不生效 |
+| 11 | 网盘与配置中心 | 🟡 | Node 配置包自带网盘和配置中心，已接入；扫码登录后的网盘播放未实测 |
+| 12 | 字幕 | ❌ | |
+| 13 | 弹幕 | ❌ | |
+| 14 | 网络增强与去广告 | ❌ | `ads`/`hosts` 字段解析了但没人用 |
+| 15 | 远程控制、推送、投屏 | ❌ | |
+| 16 | 本地文件与备份 | ❌ | |
+| 17 | 平台适配（iPad/Mac） | 🟡 | Catalyst 与原生 macOS 都能构建运行并跑 Node；缺键盘、菜单、全屏 |
+| 18 | 工程与稳定性 | 🟡 | 无单元测试；有两套首页/搜索实现；`SMOKE_TEST.md` 过时 |
 
-1. [x] **P0-Blocker: 展开 Cat WebsiteBundle 完整 `/website` 子站点列表**，已补混淆 `meta` 静态还原，站点列表不再只依赖明文 `meta` 或单个 `wexDuBoKu`。
-2. [x] **P0-Blocker: 给 WebsiteBundle 子站点加可用性分层**，已适配站点可直接进入，未适配站点显示“待适配/暂不可用”状态，避免再次触发 `WebsiteBundle 未暴露 home/category/detail/search/play`。
+## 建议移植顺序
 
-1. **把 iOS 工程跑通**
-   - [x] 安装/切换完整 Xcode，确保 `xcodebuild -list -project ios/tvbox.xcodeproj` 可执行。
-   - [ ] 用 Xcode 打开 `ios/tvbox.xcodeproj`，先跑 iPhone Simulator。
-   - [x] 修复阻塞 iOS/macOS Catalyst 编译的错误。
-   - [x] 把 `IPHONEOS_DEPLOYMENT_TARGET = 18.2` 降到合理版本，例如 iOS 16 或 iOS 17。
-   - [x] 记录最小可运行环境: Xcode 26.4.1 (17E202)、iOS deployment target 17.0、Swift 5.0。
+先打通「配置 → 站点 → 播放」这条主链路，再补体验，最后做大功能。
 
-2. **跑通最小用户链路**
-   - [x] 首次启动输入配置源。
-   - [x] 成功识别 `.js.md5` 入口对应的 Cat WebsiteBundle 源。
-   - [x] Cat WebsiteBundle 接入 SpiderManager，优先尝试直接暴露 Spider 方法的 bundle。
-   - [x] P0: 支持 Node/Fastify 型 Cat WebsiteBundle 的原生路由替代层，当前先接入真实源里的 `nodejs_wexDuBoKu`。
-   - [x] 解析 Cat WebsiteBundle 时只展示已适配子站点，避免继续选中旧占位站点 `ios_website_bundle_source`。
-   - [x] 配置刷新、切换站点、Spider 创建时清理或迁移旧缓存，避免回到 JS fallback 的旧“不支持”报错。
-   - [x] P0-Blocker: 解析并展示 Cat WebsiteBundle 完整 `/website` 子站点列表，支持明文 `meta` 和混淆 `meta` 静态还原。
-   - [x] P0-Blocker: 未适配 WebsiteBundle 子站点进入前给出明确状态，不走 JS fallback 报错。
-   - [x] 首页能展示已适配 WebsiteBundle 子站点分类。
-   - [x] 搜索能通过已适配 WebsiteBundle 子站点返回结果。
-   - [x] 详情页能通过已适配 WebsiteBundle 子站点加载剧集。
-   - [x] 点击剧集能通过已适配 WebsiteBundle 子站点拿到直链播放地址。
-   - [ ] 直播列表能加载并播放至少一个频道。
+1. **恢复标准 JSON 配置解析**（第 1 类）。这是 Android 最主要的配置格式，不恢复的话解析、直播都没有数据。
+2. **接通直播数据**（第 8 类）。
+3. **用真实解析接口验证解析链路**（第 7 类）。
+4. **播放器补齐 + 播放设置生效**（第 6、10 类）。
+5. **分类筛选、详情倒序/切源、指定搜索源**（第 3、4、5 类）。
+6. **网盘扫码登录后播放实测，Node 宿主稳定性**（第 11、2 类）。
+7. **字幕**（第 12 类）→ **弹幕**（第 13 类）。
+8. **M3U8 去广告、hosts**（第 14 类）。
+9. **AirPlay、推送、扫码输入**（第 15 类）。
+10. **备份恢复、本地文件**（第 16 类）。
+11. **iPad/Mac 体验**（第 17 类）。
 
-3. **建立回归样例**
-   - [ ] 准备 2-3 个公开可用配置源，仅用于本地验证。
-   - [ ] 每个配置源记录支持的能力: JSON 源、JS 源、直播、解析、图片防盗链。
-   - [x] 建一个 `ios/SMOKE_TEST.md`，写清楚每次发版前手动验证步骤。
-   - [x] 用真实 Cat WebsiteBundle 源验证 `wexDuBoKu` 分类、搜索、详情、播放接口。
-   - [x] 把 `wexDuBoKu` 的真实接口样例整理进 `ios/SMOKE_TEST.md`。
+---
 
-4. **再打开 macOS**
-   - [x] 先启用 Mac Catalyst，而不是立即写原生 macOS 版本。
-   - [x] 确认 Mac Catalyst target 可以编译通过。
-   - [ ] 确认 `AVPlayer`、`WKWebView` 嗅探、`UserDefaults`、文件缓存、网络请求在 Catalyst 运行时可用。
-   - [ ] 修复 Mac 上的键盘、窗口尺寸、列表滚动、播放器全屏体验。
-   - [ ] 只有当 Catalyst 限制明显影响体验时，再考虑拆出原生 macOS target。
+## 1. 配置解析 🟡
 
-## P0 - 工程健康
+- Android: `api/ApiConfig.java`（`FindResult` 解密、`parseJson`、`urls` 多仓）、`util/DefaultConfig.java`、`util/AES.java`
+- iOS: `Core/Config/ApiConfig.swift`
 
-- [x] **P0-Blocker: 展开 Cat WebsiteBundle 完整子站点列表**，从 bundle 内的 `/website` 注册数据或等价元数据中提取所有入口；支持明文 `meta` 和混淆 `meta` 静态还原。
-- [x] **P0-Blocker: WebsiteBundle 子站点可用性分层**，在 `SiteBean`/配置解析层记录 `nativeAdapter`、`isAdapted`、`unsupportedReason`，UI 允许展示未适配站点但不直接进入失败路径。
-- [x] 补充 `ios/README.md`，说明如何构建 iOS/macOS。
-- [x] 补充 `ios/SMOKE_TEST.md`，记录核心链路验证清单。
-- [x] 让 iOS generic build 通过。
-- [x] 让 Mac Catalyst build 通过。
-- [x] 梳理 Debug 日志，避免大量 `print` 长期留在生产路径。
-- [x] 处理 iOS 17 `onChange`、废弃 API 调用、`DetailView` Swift 6 捕获警告。
-- [x] 处理 `JsSpider`/`QuickJSSpider` 中 JavaScriptCore `Sendable` 相关 warning。
-- [x] 给网络、配置、Spider、播放器错误加统一用户提示。
-- [x] 检查 SwiftUI 文件是否职责过重，优先拆分 `MainView.swift` 中的首页/豆瓣/图片缓存/设置子视图。
-- [x] 明确 iOS 和 Mac 共用代码目录，例如 `Core/`、`Models/`、`Features/`，平台差异放到 `Platform/`。
-- [x] 给关键 ViewModel 标注 `@MainActor` 或统一主线程更新策略。
-- [x] Cat WebsiteBundle 不再在首页提前拦截，接入 iOS `WebsiteBundleSpider` 适配层。
-- [x] P0: 为 Node/Fastify 型 WebsiteBundle 补原生路由替代层，先支持 `wexDuBoKu` 站点。
-- [x] P0: WebsiteBundle 配置解析时优先抽取已适配子站点，旧占位站点仅作为无适配子站点时的 fallback。
-- [x] P0: 配置重新解析和站点切换时清空 Spider 缓存，并在 SpiderManager 中兜底迁移旧 WebsiteBundle 占位站点。
+已完成:
+- ✅ Cat 配置包（`.js.md5` → `.js`）交给 Node 运行，站点列表读配置包 `/config`。
+- ✅ 旧格式 `globalThis.websiteBundle` 原生静态解析（Node 不可用时的兜底），站点列表按内容 md5 缓存。
+- ✅ 配置中心 `/full-config` 格式。
+- ✅ 配置缓存、配置历史。
 
-## P1 - 数据源兼容性
+待办:
+- [ ] **恢复标准 TVBox JSON 配置解析**: `sites`、`parses`、`lives`、`spider`、`wallpaper`、`flags`、`rules`、`hosts`、`ads`、`doh`。
+  - 这段代码在 `9253199` 被删掉，可从 `git show 4fbb229:ios/tvbox/Core/Config/ApiConfig.swift` 里的 `RemoteConfig` 解码逻辑找回再对齐。
+  - 验收: 用一个公开 JSON 配置，站点列表、解析列表、直播源都能加载，首页能出内容。
+- [ ] 加密配置: Base64、`$#key#$` AES-CBC、带配置密钥的 AES-ECB、图片里藏配置（对照 `ApiConfig.FindResult`）。
+  - 验收: 各准备一个加密样例，解密后能正常加载。
+- [ ] 多仓配置 `urls`（Android 设置里的「线路选择」）。
+  - 验收: 多仓配置能列出线路，切换后重新加载。
+- [ ] 配置加载失败的可读提示: URL 无效、网络失败、JSON 无效、解密失败分别提示。
+- [ ] 给配置解析加单元测试，样例放在测试目录（目前工程没有测试 target）。
 
-### 配置解析
-- [x] **P0-Blocker: Cat WebsiteBundle `/website` 完整列表解析**，从真实 bundle 里提取竞品可见的所有站点入口；明文/混淆 `meta` 均可解析，不再硬编码单个 `wexDuBoKu`。
-- [x] **P0-Blocker: 未适配子站点状态建模**，让站点列表能区分“已适配可用”和“已识别待适配”。
-- [x] ApiConfig - 远程 JSON 配置解析
-- [x] 站点管理 `SiteBean`
-- [x] 解析器管理 `ParseBean`
-- [x] 直播配置 `LiveConfig`
-- [x] 本地缓存机制
-- [x] 支持 `.js.md5` JS 源入口，下载同路径 `.js` 并识别 `globalThis.websiteBundle`。
-- [x] Cat WebsiteBundle 源在首页/设置站点列表可见，并显示明确的 iOS 运行层暂不支持提示。
-- [x] 为 Cat WebsiteBundle 补基础 iOS 运行适配层，可执行直接暴露 Spider 方法的 bundle。
-- [x] P0: 为 Node/Fastify 型 Cat WebsiteBundle 补原生替代解析层，先支持 `wexDuBoKu` 站点。
-- [x] `wexDuBoKu` 支持分类、筛选、搜索、详情、剧集列表和播放地址获取。
-- [x] `wexDuBoKu` 适配层支持从 `ext.nativeAdapter`、`site.key`、`site.api` 三种路径识别，降低旧缓存回退风险。
-- [ ] 记录暂不支持的 Android 兼容源格式，例如加密 JSON、`clan://`、`file://`。
-- [ ] 增加配置解析失败时的可读错误: URL 无效、网络失败、JSON 无效、字段缺失、加密失败。
+## 2. 站点/爬虫 🟡
 
-### Spider
-- [x] **P0-Blocker: WebsiteBundle 子站点路由分发框架**，按 key/type 将不同子站点分派到 native adapter；没有 adapter 时返回明确 unsupported，不执行泛化 JS fallback。
-- [x] Spider 协议定义
-- [x] JsonSpider
-- [x] JsSpider - JavaScriptCore
-- [x] QuickJSSpider fallback
-- [x] WebsiteBundleSpider fallback
-- [x] 内嵌 nodejs-mobile 运行 Cat 配置包（`CatNodeRuntime` + `CatNodeSpider`），站点列表读配置包 `/config`，配置中心用 `/website`；Catalyst 回退原生适配。
-- [x] 模拟器用真实配置包（`https://9280.kstore.vip/cat/index.js.md5`）验证：96 个站点，豆瓣首页/分类、多站搜索、详情、直连站播放地址正常。
-- [ ] 界面上点通详情 → 播放，以及设置 → 配置中心里扫码登录夸克后的网盘播放；真机再验证一遍。
-- [x] Mac Catalyst 以子进程运行 App 包内的官方 node（`scripts/fetch-node-macos.sh`），与 iOS 共用宿主脚本和 `CatNodeSpider`。
-- [ ] Node 宿主：App 回到前台时检查配置包服务存活，必要时重新加载；Mac 上 node 子进程意外退出后重新拉起。
-- [ ] Mac 上架前：开启 App Sandbox 后验证 node 子进程（继承沙盒）；Intel Mac 需要 x86_64 版 node。
-- [x] WebsiteBundleNativeSpider - `wexDuBoKu`
-- [x] WebsiteBundleNativeSpider - `wexYueYue`、`animemodu`、`dongli`、`duanjuweiguan`、`hanxiaoquan`、`bookWuWei`、`bili`（mp4 flag）
-- [x] 配置中心运行时读取层 `ConfigCenterRuntime`，供原生 spider 在 `playerContent` 阶段读取 Cookie/Token/账号。
-- [x] 配置中心扫码登录方案一：当入口是真实 `/website`/`/full-config` 配置中心服务时，优先展示 MiraPlay 同款直接二维码，二维码加载成功后自动检测并保存 Cookie/Token 到本地。
-- [x] 普通 WebsiteBundle 源的原生扫码登录初版：不依赖 MiraPlay 本地 Node 后端，百度、夸克、UC Cookie、115、Bili 走网页登录扫码并自动保存 Cookie。
-- [ ] 搬运 UC TV token、Ali refresh token/open token 等 provider 专属扫码接口。
-- [x] `bili` 原生 spider 优先使用配置中心 `/bili/cookie`。
-- [x] `wodequark` 个人网盘站点初版：读取 `/quark/cookie`，列目录/文件夹详情聚合视频，播放时换取夸克直链。
-- [ ] 搬运网盘 provider: Quark、UC、115、Ali、Baidu、Tianyi、123。
-- [ ] 按 `/pans/list` 顺序做网盘 provider 分流和失败降级。
-- [ ] 适配剩余个人网盘站点: `wodebaidu`、`wode189`、`wode115`、`wode123`。
-- [ ] 对齐 Android `JarLoader`/`JsLoader` 行为，列出 iOS 无法支持的字节码/二进制格式。
-- [ ] 支持 XML 类型站点 `type = 0`。
-- [ ] 支持远程类型站点 `type = 4`。
-- [ ] 给每类站点加真实源测试记录。
+- Android: `catvod/crawler/JarLoader.java`、`JsLoader.java`、`js/*`、`python/IPyLoader.java`、`bean/AbsXml.java`、`AbsJson.java`
+- iOS: `Core/Spider/*`、`Core/Node/CatNodeRuntime.swift`、`Resources/catnode-bootstrap.js`
 
-### 搜索与分类
-- [x] 首页分类和推荐
-- [x] 分类视频列表
-- [x] 搜索
-- [x] 多站点快速搜索基础能力
-- [x] `wexDuBoKu` 分类筛选参数映射。
-- [ ] 分类筛选 UI 和筛选参数持久化。
-- [ ] 搜索源选择。
-- [ ] 搜索结果合并去重和错误隔离。
+已完成:
+- ✅ Cat 配置包: iOS 用 nodejs-mobile，Mac 用打包的官方 node 子进程，`CatNodeSpider` 调用 `/spider/{key}/{type}/*`。真实配置包 96 个站点验证过首页/分类/搜索/详情/播放。
+- ✅ `JsonSpider`（type 1）、`JsSpider`（JavaScriptCore）、`QuickJSSpider`（type 3 的 JS 站点）。
+- ✅ 原生适配（Node 不可用时兜底）: `wexDuBoKu`、`wexYueYue`、`animemodu`、`dongli`、`duanjuweiguan`、`hanxiaoquan`、`bookWuWei`、`bili`、`wodequark`。
 
-## P2 - 播放核心
+待办:
+- [ ] 第 1 类恢复后，用真实 JSON 配置分别验证 type 1 和 type 3（JS）站点。
+  - 验收: 每种至少一个站点能走通首页 → 详情 → 播放。
+- [ ] Node 宿主: App 回到前台时检查配置包服务是否还活着，必要时重新加载；Mac 上 node 子进程意外退出后重新拉起。
+  - 验收: iOS 切后台 10 分钟后回来还能请求；Mac 上手动 kill node 后能自动恢复。
+- [ ] XML 站点（type 0，对照 `AbsXml`）。
+- [ ] 远程站点（type 4）。
+- [ ] 列出 iOS 无法运行的站点格式，在站点列表里标明原因: jar（`csp_` 类，DexClassLoader）、py（Chaquopy）。
+- [ ] 决定原生适配（`WebsiteBundleNativeSpider` 等）是否保留: Node 已覆盖时可以只留兜底或删除。
 
-### 点播播放器
-- [x] PlayerView - AVPlayer 基础播放
-- [x] 播放/暂停、进度、快进快退
-- [ ] 自动下一集。
-- [ ] 续播，记住播放位置。
-- [ ] 倍速播放。
-- [ ] 画面比例调整。
-- [ ] iOS 画中画。
-- [ ] macOS/Catalyst 全屏和键盘快捷键。
-- [ ] 播放失败重试和切换解析源。
-- [ ] Header、User-Agent、Referer、Cookie 注入播放请求。
+不移植:
+- ⛔ jar 爬虫（需要 JVM/DEX）。
+- ⛔ Python 爬虫（`pyramid` 模块，Chaquopy）。
 
-### 解析和嗅探
-- [x] ParserManager - VIP 视频解析
-- [x] JSON 解析接口并发调用
-- [x] 多解析源切换
-- [x] WebView 嗅探
-- [x] SuperParse iframe 并发嗅探
-- [x] 递归解析
-- [x] VideoParseRuler 嗅探规则
-- [ ] 与 Android `SuperParse`、`JsonParallel` 行为逐项对齐。
-- [ ] 增加解析链路日志开关，方便定位具体解析器失败。
-- [ ] macOS/Catalyst 下验证 WKWebView 嗅探可用性。
+## 3. 首页与分类 🟡
 
-### 直播
-- [x] TXT 格式直播源解析
-- [x] M3U/M3U8 格式解析
-- [x] TVBOX JSON 直播格式支持
-- [x] EPG 管理
-- [ ] 直播频道收藏。
-- [ ] 直播分组搜索。
-- [x] 直播播放 Header 支持。
-- [ ] EPG 缓存和刷新策略。
+- Android: `ui/activity/HomeActivity.java`、`ui/fragment/GridFragment.java`、`ui/dialog/GridFilterDialog.java`
+- iOS: `Features/Home/HomeContentView.swift`、`HomeContentViewModel.swift`、`CategoryDetailView.swift`
 
-## P3 - iOS/mac 体验补齐
+已完成:
+- ✅ 首页分类与推荐、下拉刷新、站点切换。
+- ✅ 站点首页为空时显示豆瓣推荐，豆瓣卡片跳快速搜索。
+- ✅ 分类页加载与滚动分页。
 
-### 平台适配
+待办:
+- [ ] 分类筛选: 读取首页返回的 `filters`，在分类页提供筛选面板，筛选条件传给 `categoryContent(extend:)`。
+  - 验收: 豆瓣「电影筛选」能按类型/地区/年份筛选，翻页保留筛选。
+- [ ] 切换分类再回来时保留该分类的筛选条件（Android 存在 `MovieSort.filterSelect` 里，只在内存中，不持久化）。
+- [ ] 首页设置项（对照 Android「首页推荐」「首页多行」）: 推荐来源（豆瓣/站点/无）。
+
+## 4. 搜索 🟡
+
+- Android: `ui/activity/SearchActivity.java`、`FastSearchActivity.java`、`ui/dialog/SearchCheckboxDialog.java`、`QuickSearchDialog.java`、`util/SearchHelper.java`
+- iOS: `Features/Search/SearchView.swift`、`FastSearchView.swift`
+
+已完成:
+- ✅ 当前站搜索、聚合搜索（并发、去重）、搜索历史。
+- 🟡 热词: 目前是写死在 `SearchView.loadHotKeywords` 里的 6 个片名。
+- ✅ 快速搜索（按片名搜索所有站点，Android `FastSearchActivity` 同规则），结果记录来源站点。
+
+待办:
+- [ ] 指定搜索源: 选择参与聚合搜索的站点并保存（对照 `SearchCheckboxDialog`、`SearchHelper`）。
+  - 验收: 只勾 2 个站点时只搜这 2 个，重启后保留。
+- [ ] 单个站点搜索失败或超时不影响其他结果，失败站点可见。
+- [ ] 热词改为在线获取（豆瓣/站点热搜）。
+- [ ] 合并 `SearchView` 与 `FastSearchView` 的多站点搜索逻辑，避免两套实现。
+
+## 5. 详情 🟡
+
+- Android: `ui/activity/DetailActivity.java`、`ui/dialog/DescDialog.java`、`EpisodeDialog.java`
+- iOS: `Features/Detail/DetailView.swift`
+
+已完成:
+- ✅ 线路切换、剧集列表、立即播放、恢复上次线路、收藏、按来源站点取详情。
+- ✅ 配置中心卡片直接打开配置中心。
+
+待办:
+- [ ] 剧集正序/倒序切换。
+- [ ] 切源: 用片名在其他 `changeable` 站点找同名影片并切换，保留当前集数；详情加载失败时自动触发（对照 `DetailActivity.startDetailFallback`）。
+  - 验收: 当前站点详情失败时自动换到另一站点的同名影片，停在原来的集数。
+- [ ] 简介展开/收起（对照 `DescDialog`）。
+
+## 6. 点播播放器 🟡
+
+- Android: `player/MyVideoView.java`、`player/controller/VodController.java`、`ui/fragment/PlayFragment.java`、`util/PlayerHelper.java`、`util/AudioTrackMemory.java`、`player/MusicPlaybackService.java`
+- iOS: `Features/Player/PlayerView.swift`
+
+已完成:
+- ✅ AVPlayer 播放、暂停、拖动、快进快退。
+- ✅ 上一集/下一集、播完自动下一集、每集续播。
+- ✅ 站点请求头（UA/Referer/Cookie）注入、按 `format` 指定 MIME。
+
+待办:
+- [ ] 倍速（菜单里「倍速」目前是空按钮）。验收: 0.5x–3x 可切换，切集后保持。
+- [ ] 画面比例/缩放（Android「画面缩放」、播放器里的 16:9）。
+- [ ] 音轨、内嵌字幕轨选择（AVPlayer `AVMediaSelectionGroup`，对照「音轨/视轨」）。
+- [ ] 跳过片头片尾（Android「片头尾」，按影片记忆时间点）。
+- [ ] 重播、刷新（重新取播放地址）。
+- [ ] 播放失败自动换线路/换解析（Android「自动换线」）。
+- [ ] 画中画（iOS）。
+- [ ] 后台播放与锁屏控制: `AVAudioSession`、`MPNowPlayingInfoCenter`、`MPRemoteCommandCenter`（对照 `MusicPlaybackService`）。
+- [ ] 播放时禁止自动锁屏。
+- [ ] 外部播放器（可选）: 通过 URL scheme 交给 VLC/Infuse，对照 `player/thirdparty`。
+
+不移植:
+- ⛔ IJK、Exo、阿里播放器及其解码/缓存设置（iOS 统一用 AVPlayer）。
+
+## 7. 解析与嗅探 🟡
+
+- Android: `util/parser/SuperParse.java`、`JsonParallel.java`、`util/VideoParseRuler.java`、`bean/ParseBean.java`、`ui/activity/...`（WebView 嗅探）
+- iOS: `Core/Parser/ParserManager.swift`、`JsonParser.swift`、`SuperParse.swift`、`SnifferWebView.swift`、`VideoSniffer.swift`、`VideoParseRuler.swift`
+
+已完成（代码层面）:
+- ✅ JSON 解析接口并发、多解析源切换、WebView 嗅探、SuperParse iframe 并发嗅探、递归解析、嗅探规则。
+
+待办:
+- [ ] 依赖第 1 类: 配置里的 `parses`、`flags`、`rules` 要能加载进来，现在 `parses` 永远为空，`parse=1` 的视频都会失败。
+  - 验收: 一个需要 VIP 解析的站点，点剧集能解析出地址并播放。
+- [ ] 播放器里切换解析接口（Android 播放器「解析」按钮）。
+- [ ] 与 Android `SuperParse`、`JsonParallel` 的超时、优先级逐项对齐。
+- [ ] Mac（Catalyst/原生）上验证 WKWebView 嗅探。
+
+## 8. 直播 🟡
+
+- Android: `ui/activity/LivePlayActivity.java`、`player/controller/LiveController.java`、`util/live/TxtSubscribe.java`、`util/EpgUtil.java`、`util/EpgNameFuzzyMatch.java`、`bean/Live*.java`、`ui/dialog/LivePasswordDialog.java`
+- iOS: `Features/Live/LiveView.swift`、`Core/Live/*`
+
+已完成（代码层面）:
+- ✅ TXT、M3U、TVBox JSON 直播源解析，EPG 加载，频道分组界面，直播播放请求头，多源切换。
+
+待办:
+- [ ] **接通数据来源**: `LiveView` 只读 `ApiConfig.liveConfigs`，而它在所有配置路径里都被清空；设置里的「直播地址」保存了但没有使用。
+  - 做法: 第 1 类恢复 `lives` 解析，同时让「直播地址」生效（有直播地址时优先用它）。
+  - 验收: 填一个公开 M3U 地址，直播页出现分组和频道，至少一个频道能播。
+- [ ] EPG 频道名模糊匹配（对照 `EpgNameFuzzyMatch`）、EPG 缓存与按天刷新。
+- [ ] 回看（catchup/时移）。
+- [ ] 加密分组（输入密码才显示，对照 `LivePasswordDialog`）。
+- [ ] 直播设置: 画面比例、超时自动换源、显示时间/网速（对照 `LiveSettingGroup`）。
+- [ ] 换台交互: 上下切台、数字选台（Mac 键盘）。
+
+## 9. 历史与收藏 ✅
+
+- Android: `cache/VodRecord*.java`、`VodCollect*.java`、`util/HistoryHelper.java`、`ui/activity/HistoryActivity.java`、`CollectActivity.java`
+- iOS: `Core/Storage/StorageManager.swift`、`Features/History/HistoryView.swift`、`Features/Collect/CollectView.swift`
+
+已完成:
+- ✅ 观看历史（记录来源站点，每集进度，站点不在时转快速搜索）、收藏、搜索历史、配置历史。
+
+待办:
+- [ ] 历史条数上限设置（Android「历史记录」）。
+- [ ] 历史合并（同名影片不同站点合为一条，Android「历史合并」）。
+- [ ] iCloud 同步（可选，后置）。
+
+## 10. 设置 🟡
+
+- Android: `ui/fragment/ModelSettingFragment.java`、`util/HawkConfig.java`、`ui/dialog/*`
+- iOS: `Features/Settings/SettingsView.swift`
+
+已完成:
+- ✅ 配置地址与历史、当前站点、默认解析、刷新配置、配置中心入口、清除缓存、关于。
+- ✅ Mac 上设置页与弹窗不再分栏显示。
+
+待办:
+- [ ] **播放设置生效**: 「播放器」「默认画质」「后台播放」「自动下一集」只在启动时读一次，改了不保存，也没有任何地方使用。
+  - 验收: 关闭「自动下一集」后播完不再自动跳集，重启 App 后设置保留。
+- [ ] 「扫码输入」按钮只改了状态，没有扫码界面（iOS 用 `DataScannerViewController` 或 `AVCaptureSession`，Mac 隐藏该按钮）。
+- [ ] 清除缓存只清了 `URLCache` 和临时目录，补上图片缓存、配置缓存、Node 配置包缓存。
+- [ ] Android 其他设置按需移植: 下次进入（点播/直播）、搜索展示样式、聚合搜索开关、壁纸、调试模式。
+
+## 11. 网盘与配置中心 🟡
+
+- Android: 由配置包/jar 实现，App 侧无对应代码
+- iOS: `Features/ConfigCenter/*`、`Core/Spider/QuarkNetDiskProvider.swift`、`ConfigCenterNativeSpider.swift`、`WodeQuarkNativeSpider.swift`，详见 `ios/CONFIG_CENTER_NETDISK.md`
+
+已完成:
+- ✅ Node 配置包自带配置中心（`/website`）: 设置 → 配置中心、「配置|中心」站点卡片都能直接打开。
+- ✅ 网盘线路（夸克/UC/百度/115）随配置包一起工作，未登录时提示去配置中心登录。
+- ✅ 原生配置中心与夸克 provider（Node 不可用时兜底）。
+
+待办:
+- [ ] 在配置中心扫码登录夸克，再播放一个夸克线路。验收: 能播放，重启后不用重新登录。
+- [ ] 真机上再验证一遍（iOS 真机后台限制和模拟器不同）。
+- [ ] Node 方案覆盖后，决定原生网盘兜底代码是否保留（原 TODO 里的 UC/阿里/天翼/123 provider 搬运可以不做）。
+
+## 12. 字幕 ❌
+
+- Android: `subtitle/*`（`SubtitleEngine`、`SubtitleLoader`、`SubtitleFinder`、`format/*`）、`ui/dialog/SubtitleDialog.java`、`SearchSubtitleDialog.java`、`util/SubtitleHelper.java`
+- iOS: 无
+
+待办:
+- [ ] 内嵌字幕轨选择（与第 6 类音轨一起做，AVPlayer 原生支持）。
+- [ ] 外挂字幕: SRT、ASS（先纯文本）、VTT 解析，叠加渲染到播放器。
+- [ ] 站点 `playerContent` 返回的字幕地址自动加载。
+- [ ] 字幕样式（字号、颜色、位置）和时间轴偏移。
+- [ ] 在线字幕搜索（对照 `SearchSubtitleDialog`）。
+
+## 13. 弹幕 ❌
+
+- Android: `api/DanmakuApi.java`、`player/danmu/*`、`bean/Danmu*.java`、`ui/dialog/DanmuSettingDialog.java`、`SearchDanmuDialog.java`、`DanmuApiDialog.java`、`util/DanmuHelper.java`、`player/src/.../tv/danmaku`
+- iOS: 无
+
+待办:
+- [ ] 弹幕数据模型与 XML（B 站格式）解析。
+- [ ] 弹幕渲染层（滚动/顶部/底部，叠加在播放器上）。
+- [ ] 站点 `playerContent` 返回的 `danmaku` 地址自动加载（`PlayerContent.danmaku` 已解析但未使用）。
+- [ ] 弹幕设置: 开关、透明度、字号、速度、显示区域。
+- [ ] 弹幕搜索接口（配置里的 `danmuSearchUrl`，对照 `DanmakuApi`）。
+
+## 14. 网络增强与去广告 ❌
+
+- Android: `util/M3u8.java`、`util/AdBlocker.java`、`catvod/net/OkDns.java`、`okhttp3/dnsoverhttps/*`、`util/net/OkProxySelector.java`、`util/TLSSocketFactory.java`
+- iOS: `ApiConfig` 里解析了 `adHosts`、`hosts`，但没有任何地方使用
+
+待办:
+- [ ] M3U8 去广告: 按域名、按切片时长/不连续标记识别广告片段，生成干净的 m3u8 给 AVPlayer（需要本地代理或 `AVAssetResourceLoaderDelegate`）。
+  - 验收: 一个带插播广告的 m3u8，播放时跳过广告。
+- [ ] WebView 嗅探时屏蔽 `ads` 域名（对照 `AdBlocker`）。
+- [ ] `hosts` 域名映射。
+- [ ] 安全 DNS（DoH）。iOS 17 可用 `NWParameters.PrivacyContext` 加密 DNS，优先级低。
+
+## 15. 远程控制、推送、投屏 ❌
+
+- Android: `server/*`（`RemoteServer` 本地 HTTP 服务 9978 端口: `/action`、`/push`、`/proxy`、`/file`、`/upload` 等）、`ui/activity/PushActivity.java`、`ui/dialog/RemoteDialog.java`、`SearchRemoteTvDialog.java`、`util/IpScanning.java`、`dlna/*`、`ui/dialog/CastDeviceDialog.java`、`receiver/*`
+- iOS: 无（配置中心里已有二维码生成）
+
+待办:
+- [ ] AirPlay 投屏: 播放器加 `AVRoutePickerView`，开启 `allowsExternalPlayback`。验收: 能投到 Apple TV 或支持 AirPlay 的电视。
+- [ ] 推送给局域网里的 Android TVBox: 扫描 9978 端口设备，把当前视频或配置推过去（对照 `IpScanning`、`SearchRemoteTvDialog`）。
+- [ ] 接收推送: App 内起 HTTP 服务（iOS 只能前台运行），手机网页提交地址后直接播放（对照 `RemoteServer`、`RemoteDialog` 二维码）。
+- [ ] URL scheme 接收外部推送（对照 `receiver/PushReceiver`）。
+- [ ] DLNA 投屏（可选，需要第三方库，对照 `dlna/*`）。
+
+## 16. 本地文件与备份 ❌
+
+- Android: `ui/activity/LocalFileActivity.java`、`ui/dialog/BackupDialog.java`
+- iOS: 无
+
+待办:
+- [ ] 本地文件播放: iOS 用文件选择器，Mac 用打开面板，支持本地视频和本地配置文件。
+- [ ] 备份与恢复: 导出/导入历史、收藏、配置地址、设置（JSON 文件）。
+
+## 17. 平台适配（iPad/Mac） 🟡
+
+- iOS: `Platform/*`
+
+已完成:
+- ✅ Mac Catalyst 与原生 macOS 都能构建运行；Mac 上 Node 以子进程运行。
+- ✅ Mac 启动时配置解析不阻塞主线程。
+- ✅ 设置页、弹窗在 Mac/iPad 上不再分栏显示；原生 macOS 播放器窗口尺寸修复。
+
+待办:
+- [ ] 决定 Mac 主线: Catalyst 还是原生 macOS（现在两者都在构建，Xcode 默认「My Mac」是原生版）。
+- [ ] Mac 键盘: 空格播放/暂停、左右快退快进、上下切台、ESC 退出全屏。
+- [ ] Mac 菜单栏: 打开配置、刷新、播放控制、全屏。
+- [ ] 播放器全屏与窗口尺寸适配。
 - [ ] iPad 分栏布局。
-- [ ] Mac Catalyst 窗口尺寸适配。
-- [ ] Mac 键盘方向键/回车/空格/ESC 操作。
-- [ ] Mac 菜单栏基础命令: 打开配置、刷新、播放/暂停、全屏。
+- [ ] Mac 上架前: 开启 App Sandbox 后验证 node 子进程；需要支持 Intel 时打包 x86_64 版 node。
 - [ ] 深色模式完整检查。
-- [ ] 图片缓存替换为更稳定的实现，或增强当前 `CachedAsyncImage` 的磁盘缓存。
 
-### 设置与数据
-- [x] HistoryView
-- [x] CollectView
-- [x] SettingsView
-- [x] StorageManager 基础本地存储
-- [x] API 历史记录。
-- [ ] 配置导入/导出。
-- [ ] iCloud 同步收藏/历史，可后置。
-- [ ] 清理缓存。
-- [ ] 播放器设置页。
+## 18. 工程与稳定性 🟡
 
-## P4 - Android 功能移植清单
+- [ ] 加单元测试 target，先覆盖配置解析、直播源解析、Spider 返回值解码。
+- [ ] 更新 `ios/SMOKE_TEST.md`（里面还是早期 `wexDuBoKu` 原生适配的验证步骤）。
+- [ ] 清理未使用的旧首页 `Features/Home/HomeView.swift`、`HomeViewModel.swift`（`MainView` 实际用的是 `HomeContentView`）。
 
-### 字幕
-- [ ] SRT 字幕解析。
-- [ ] ASS 字幕解析。
-- [ ] TTML 字幕解析。
-- [ ] 在线字幕搜索。
-- [ ] 字幕样式设置。
-- [ ] 字幕时间轴调整。
+## 不移植清单
 
-### 弹幕
-- [ ] Danmu 数据模型。
-- [ ] XML 弹幕解析器。
-- [ ] 弹幕渲染视图。
-- [ ] 弹幕设置。
-- [ ] 弹幕开关控制。
-
-### 网盘/存储驱动
-- [x] MiraPlay 配置中心网盘 Cookie/Token/账号本地保存。
-- [x] 记录配置中心 token 应用链路和搬运顺序: `ios/CONFIG_CENTER_NETDISK.md`。
-- [x] 配置中心运行时读取层，统一映射百度、夸克、UC、115、天翼、123、阿里凭据。
-- [ ] 将配置中心凭据接入网盘分享解析 provider。
-- [ ] StorageDrive 数据模型。
-- [ ] DriveFolderFile 文件模型。
-- [ ] 本地目录浏览。
-- [ ] WebDAV 连接、浏览、播放。
-- [ ] Alist 连接、浏览、播放。
-- [ ] DriveView。
-
-### M3U8 处理
-- [ ] 自动检测广告片段。
-- [ ] 基于域名过滤广告。
-- [ ] 基于切片时长过滤广告。
-- [ ] 自定义广告规则。
-- [ ] 解密 KEY 路径处理。
-
-### 网络增强
-- [ ] DNS over HTTPS。
-- [ ] 代理服务器。
-- [ ] 自定义 User-Agent。
-- [ ] TLS 兼容优化。
-
-### 远程控制和推送
-- [ ] 本地 HTTP 服务器。
-- [ ] Web 远程控制 API。
-- [ ] 接收推送播放。
-- [ ] 远程配置推送。
-- [ ] 二维码生成。
-- [ ] 扫码输入配置地址。
-
-### 投屏
-- [ ] AirPlay 能力整理。
-- [ ] DLNA 可行性评估。
-
-## Android 对照表
-
-| Android 文件 | iOS/mac 对应 | 状态 |
-|-------------|--------------|------|
-| `bean/Danmu.java` | `Models/Danmu.swift` | 待实现 |
-| `bean/Doh.java` | `Models/Doh.swift` | 待实现 |
-| `bean/DriveFolderFile.java` | `Models/DriveFolderFile.swift` | 待实现 |
-| `bean/IJKCode.java` | 不适用，AVPlayer 方案 | 后置评估 |
-| `bean/SearchResultWrapper.java` | `Models/SearchResultWrapper.swift` | 待实现 |
-| `bean/SubtitleBean.java` | `Models/Subtitle.swift` | 待实现 |
-| `bean/VodSeriesGroup.java` | `Models/VodSeriesGroup.swift` | 待实现 |
-| `cache/SearchHistory.java` | `Core/Storage/SearchHistory.swift` | 待实现 |
-| `cache/StorageDrive.java` | `Models/StorageDrive.swift` | 待实现 |
-| `player/danmu/Parser.java` | `Features/Player/DanmuParser.swift` | 待实现 |
-| `player/controller/VodController.java` | `Features/Player/PlayerControls.swift` | 部分实现 |
-| `player/controller/LiveController.java` | `Features/Live/LiveControls.swift` | 部分实现 |
-| `player/thirdparty/MXPlayer.java` | 不适用 | 不移植 |
-| `player/thirdparty/Kodi.java` | 不适用 | 不移植 |
-| `player/EXOmPlayer.java` | 不适用，AVPlayer 方案 | 不移植 |
-| `player/IjkmPlayer.java` | 不适用，AVPlayer 方案 | 不移植 |
-| `server/ControlManager.java` | `Core/Server/ControlManager.swift` | 待实现 |
-| `server/RemoteServer.java` | `Core/Server/RemoteServer.swift` | 待实现 |
-| `server/WebController.kt` | `Core/Server/WebController.swift` | 待实现 |
-| `server/DataReceiver.java` | `Core/Server/DataReceiver.swift` | 待实现 |
-| `subtitle/SubtitleLoader.java` | `Features/Player/SubtitleLoader.swift` | 待实现 |
-| `subtitle/SubtitleEngine.java` | `Features/Player/SubtitleEngine.swift` | 待实现 |
-| `subtitle/format/FormatSRT.java` | `Features/Player/Format/FormatSRT.swift` | 待实现 |
-| `subtitle/format/FormatASS.java` | `Features/Player/Format/FormatASS.swift` | 待实现 |
-| `subtitle/format/FormatTTML.java` | `Features/Player/Format/FormatTTML.swift` | 待实现 |
-| `ui/activity/DriveActivity.java` | `Features/Drive/DriveView.swift` | 待实现 |
-| `ui/activity/AppsActivity.java` | 不适用 | 不移植 |
-| `ui/activity/PushActivity.java` | `Features/Push/PushView.swift` | 待实现 |
-| `ui/activity/FastSearchActivity.java` | `Features/Search/FastSearchView.swift` | 待实现 |
-| `ui/dialog/DanmuSettingDialog.java` | `Features/Player/DanmuSettingView.swift` | 待实现 |
-| `ui/dialog/ApiHistoryDialog.java` | `Features/Settings/ApiHistoryView.swift` | 待实现 |
-| `ui/dialog/BackupDialog.java` | `Features/Settings/BackupView.swift` | 待实现 |
-| `ui/dialog/GridFilterDialog.java` | `Features/Home/GridFilterView.swift` | 待实现 |
-| `ui/dialog/MediaSettingDialog.java` | `Features/Player/MediaSettingView.swift` | 待实现 |
-| `ui/dialog/SearchCheckboxDialog.java` | `Features/Search/SearchSourceSelectView.swift` | 待实现 |
-| `ui/dialog/RemoteDialog.java` | `Features/Settings/RemoteView.swift` | 待实现 |
-| `ui/dialog/PushDialog.java` | `Features/Push/PushDialog.swift` | 待实现 |
-| `ui/dialog/WebdavDialog.java` | `Features/Drive/WebdavConfigView.swift` | 待实现 |
-| `ui/dialog/AlistDriveDialog.java` | `Features/Drive/AlistConfigView.swift` | 待实现 |
-| `ui/tv/QRCodeGen.java` | `Common/Utils/QRCodeGen.swift` | 待实现 |
-| `util/M3U8.java` | `Core/Player/M3U8AdFilter.swift` | 待实现 |
-| `util/Proxy.java` | `Core/Network/Proxy.swift` | 待实现 |
-| `util/PlayerHelper.java` | `Core/Player/PlayerHelper.swift` | 部分实现 |
-| `util/SearchHelper.java` | `Core/Search/SearchHelper.swift` | 待实现 |
-| `util/HawkConfig.java` | `Core/Config/AppConfig.swift` | 待实现 |
-
-## 暂缓事项
-
-- 暂缓原生 macOS target，先用 Mac Catalyst 验证。
-- 暂缓 IJK/Exo/阿里播放器等 Android 播放器移植，iOS/macOS 优先使用 AVPlayer。
-- 暂缓第三方播放器调用，iOS/macOS 没有 Android Intent 对等机制。
-- 暂缓大规模 UI 美化，先保证核心链路稳定。
+| Android | 原因 | iOS 替代 |
+|---------|------|----------|
+| `catvod/crawler/JarLoader.java`（jar 爬虫） | iOS 不能加载 DEX/JVM | Cat 配置包（Node）或 JS 站点 |
+| `pyramid` 模块、`IPyLoader`（Python 爬虫） | 依赖 Chaquopy | 无 |
+| `player/IjkMediaPlayer.java`、`ExoPlayer.java` 等 | Android 播放内核 | AVPlayer |
+| `player/thirdparty/*`（Kodi、MX、Reex、VLC） | Android Intent | 可选: URL scheme 调用 iOS 版 VLC/Infuse |
+| `util/thunder/*`、`com/p2p/P2PClass.java`（迅雷、磁力、荐片） | 依赖 Android 原生库 | 无 |
+| `util/XWalkUtils.java`、`XWalkInitDialog.java` | Crosswalk WebView | WKWebView |
+| `ui/tv/widget/*`、`ui/adapter/*` | Android TV 焦点控件和列表适配器 | SwiftUI |
+| `quickjs` 模块 | Android 版 QuickJS 绑定 | JavaScriptCore / `QuickJSSpider` |
