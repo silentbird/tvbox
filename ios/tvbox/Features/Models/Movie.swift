@@ -170,7 +170,8 @@ struct VodInfo: Decodable, Identifiable {
     /// 播放地址列表 - 对应每个源的集数列表
     var playUrls: [[VodPlayItem]] = []
     
-    struct VodPlayItem: Identifiable, Hashable {
+    /// Codable: 观看历史会存下剧集列表，用于直接播放
+    struct VodPlayItem: Identifiable, Hashable, Codable {
         var id: String { "\(name)_\(url)" }
         let name: String
         let url: String

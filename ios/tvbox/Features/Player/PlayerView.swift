@@ -3,9 +3,35 @@ import SwiftUI
 /// 剧集的真实播放地址
 typealias PlayAddress = (url: URL, headers: [String: String]?, format: String?)
 
+/// 向站点获取剧集的真实播放地址，需要解析时一并解析。详情页和观看历史共用
+@MainActor
+func resolvePlayAddress(site: SiteBean, flag: String, episode: VodInfo.VodPlayItem) async throws -> PlayAddress {
+    // 1. 获取播放内容
+    var content = try await SpiderManager.shared.playerContent(site: site, flag: flag, id: episode.url)
+
+    // jx=1 时和 Android 一样改用默认解析
+    if content.jxFrom == "1" {
+        content.parse = 1
+        content.playUrl = nil
+    }
+
+    // 2. 如果需要解析
+    if content.needParse {
+        content = try await ParserManager.shared.parse(content: content)
+    }
+
+    // 3. 返回 URL
+    guard let url = URL(string: content.url) else {
+        throw ParserError.invalidUrl
+    }
+
+    return (url, content.header, content.format)
+}
+
 struct PlayerView: View {
-    let vodInfo: VodInfo
-    let sourceIndex: Int
+    let title: String
+    /// 当前播放源的剧集
+    let episodes: [VodInfo.VodPlayItem]
     /// 开始播放的剧集
     let episodeIndex: Int
     /// 开始播放的位置 (秒)，用于续播
@@ -78,7 +104,7 @@ struct PlayerView: View {
         .toast(message: viewModel.toastMessage, isShowing: $viewModel.showToast)
         .onAppear {
             viewModel.start(
-                episodes: sourceIndex < vodInfo.playUrls.count ? vodInfo.playUrls[sourceIndex] : [],
+                episodes: episodes,
                 episodeIndex: episodeIndex,
                 startPosition: startPosition,
                 resolve: resolvePlayUrl,
@@ -140,7 +166,7 @@ struct PlayerView: View {
             }
             
             VStack(alignment: .leading, spacing: 2) {
-                Text(vodInfo.vodName)
+                Text(title)
                     .font(.headline)
                     .foregroundColor(.white)
                     .lineLimit(1)

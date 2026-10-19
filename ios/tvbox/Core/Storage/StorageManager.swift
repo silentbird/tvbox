@@ -87,6 +87,9 @@ class StorageManager {
         let progress: Double // 播放进度 (秒)
         let duration: Double // 总时长 (秒)
         let updateTime: Date
+        /// 播放源名称和该播放源的剧集，用于从历史直接播放，不用再加载详情。旧记录没有这两项
+        var playFlag: String?
+        var episodes: [VodInfo.VodPlayItem]?
     }
     
     func getVodHistory() -> [VodHistoryItem] {
@@ -165,11 +168,32 @@ class StorageManager {
             episodeName: episodeName,
             progress: progress,
             duration: duration,
-            updateTime: Date()
+            updateTime: Date(),
+            playFlag: vodInfo.playFlags.indices.contains(sourceIndex) ? vodInfo.playFlags[sourceIndex] : nil,
+            episodes: vodInfo.playUrls.indices.contains(sourceIndex) ? vodInfo.playUrls[sourceIndex] : nil
         )
-        
+
         addVodHistory(item)
         return item
+    }
+
+    /// 从历史直接播放时更新进度，播放源和剧集沿用原记录
+    func updateHistory(_ item: VodHistoryItem, episodeIndex: Int, progress: Double, duration: Double) {
+        let episodeName = item.episodes.flatMap { $0.indices.contains(episodeIndex) ? $0[episodeIndex].name : nil }
+        addVodHistory(VodHistoryItem(
+            vodId: item.vodId,
+            vodName: item.vodName,
+            vodPic: item.vodPic,
+            siteKey: item.siteKey,
+            playIndex: item.playIndex,
+            episodeIndex: episodeIndex,
+            episodeName: episodeName,
+            progress: progress,
+            duration: duration,
+            updateTime: Date(),
+            playFlag: item.playFlag,
+            episodes: item.episodes
+        ))
     }
     
     private func saveVodHistory(_ history: [VodHistoryItem]) {

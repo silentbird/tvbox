@@ -2,9 +2,13 @@ import SwiftUI
 
 struct DetailView: View {
     let movie: MovieItem
+    /// 详情加载完直接播放上次看的那一集，用于从观看历史进入
+    var autoPlay = false
     @StateObject private var viewModel = DetailViewModel()
     @State private var selectedSourceIndex = 0
     @State private var playRequest: PlayRequest?
+    /// 只自动播放一次，退出播放器回到详情页不再触发
+    @State private var didAutoPlay = false
     @Environment(\.tvboxWideLayout) private var isWideLayout
 
     var body: some View {
@@ -103,8 +107,8 @@ struct DetailView: View {
                 let episodeIndex = request.episodeIndex
                 let flag = vodInfo.playFlags.indices.contains(sourceIndex) ? vodInfo.playFlags[sourceIndex] : ""
                 PlayerView(
-                    vodInfo: vodInfo,
-                    sourceIndex: sourceIndex,
+                    title: vodInfo.vodName,
+                    episodes: vodInfo.playUrls.indices.contains(sourceIndex) ? vodInfo.playUrls[sourceIndex] : [],
                     episodeIndex: episodeIndex,
                     startPosition: viewModel.resumePosition(sourceIndex: sourceIndex, episodeIndex: episodeIndex),
                     resolvePlayUrl: { episode in try await viewModel.getPlayUrlAsync(flag: flag, episode: episode) },
@@ -122,6 +126,12 @@ struct DetailView: View {
             if let history = viewModel.history, let vodInfo = viewModel.vodInfo,
                history.playIndex < vodInfo.playUrls.count {
                 selectedSourceIndex = history.playIndex
+            }
+            if autoPlay, !didAutoPlay, let vodInfo = viewModel.vodInfo,
+               vodInfo.playUrls.indices.contains(selectedSourceIndex),
+               !vodInfo.playUrls[selectedSourceIndex].isEmpty {
+                didAutoPlay = true
+                play(episodeIndex: viewModel.playIndex(sourceIndex: selectedSourceIndex))
             }
         }
     }
@@ -535,29 +545,9 @@ class DetailViewModel: ObservableObject {
     ///   - flag: 播放源标识
     ///   - episode: 剧集信息
     /// - Returns: 可播放的 URL、headers 和站点给出的媒体格式
-    func getPlayUrlAsync(flag: String, episode: VodInfo.VodPlayItem) async throws -> (url: URL, headers: [String: String]?, format: String?) {
+    func getPlayUrlAsync(flag: String, episode: VodInfo.VodPlayItem) async throws -> PlayAddress {
         guard let site else { throw SpiderError.invalidSite }
-        
-        // 1. 获取播放内容
-        var content = try await spiderManager.playerContent(site: site, flag: flag, id: episode.url)
-        
-        // jx=1 时和 Android 一样改用默认解析
-        if content.jxFrom == "1" {
-            content.parse = 1
-            content.playUrl = nil
-        }
-        
-        // 2. 如果需要解析
-        if content.needParse {
-            content = try await parserManager.parse(content: content)
-        }
-        
-        // 3. 返回 URL
-        guard let url = URL(string: content.url) else {
-            throw ParserError.invalidUrl
-        }
-        
-        return (url, content.header, content.format)
+        return try await resolvePlayAddress(site: site, flag: flag, episode: episode)
     }
     
     /// 切换收藏状态
