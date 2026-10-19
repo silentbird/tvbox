@@ -15,7 +15,13 @@ This directory contains the SwiftUI port of the Android TVBox app.
 - Verified locally with Xcode 26.4.1 (17E202).
 - iOS deployment target: 17.0.
 - Swift version: 5.0, as configured in the Xcode project.
-- Node runtimes (not committed). Run once before the first build:
+- Metal Toolchain, needed to compile KSPlayer's Metal shaders. Since Xcode 26 it is a separate download:
+
+  ```sh
+  xcodebuild -downloadComponent MetalToolchain
+  ```
+
+- Vendored dependencies (not committed). Run once before the first build:
 
   ```sh
   ios/scripts/fetch-nodemobile.sh   # iOS: nodejs-mobile framework
@@ -24,6 +30,7 @@ This directory contains the SwiftUI port of the Android TVBox app.
   ```
 
 - KSPlayer is pinned to 2.3.4, the last fully open-source release (GPL-3.0). Later releases ship the core as a binary without iOS device support.
+- If the FFmpegKit download is slow, download https://github.com/kingslay/FFmpegKit/archive/refs/tags/6.1.4.zip yourself, extract it to `ios/Vendor/FFmpegKit` (so `ios/Vendor/FFmpegKit/Package.swift` exists), then run `fetch-ksplayer.sh` again to apply its fixes.
 
 ## Cat Bundles Through Node
 
