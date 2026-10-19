@@ -250,9 +250,55 @@ class SearchViewModel: ObservableObject {
         }
     }
     
+    // MARK: - Hot Keywords
+    // 对应 Android SearchActivity: 热词取豆瓣热门剧集，失败时用默认热词
+
+    private static let hotSearchURL = URL(string: "https://movie.douban.com/j/search_subjects?type=tv&tag=%E7%83%AD%E9%97%A8&sort=recommend&page_limit=20&page_start=0")!
+    private static let defaultHotKeywords = ["家业", "主角", "低智商犯罪", "苏超", "书卷一梦", "美人余", "藏海传", "长安的荔枝", "庆余年", "凡人修仙传"]
+    /// 热词只请求一次，App 运行期间复用
+    private static var hotKeywordsTask: Task<[String], Never>?
+
     private func loadHotKeywords() {
-        // 默认热门关键词
-        hotKeywords = ["庆余年", "三体", "狂飙", "漫长的季节", "繁花", "长相思"]
+        let task = Self.hotKeywordsTask ?? Task { await Self.fetchHotKeywords() }
+        Self.hotKeywordsTask = task
+        Task {
+            hotKeywords = await task.value
+        }
+    }
+
+    private nonisolated static func fetchHotKeywords() async -> [String] {
+        var request = URLRequest(url: hotSearchURL)
+        request.timeoutInterval = 15
+        request.setValue(UA.shared.random(), forHTTPHeaderField: "User-Agent")
+        request.setValue("https://movie.douban.com/", forHTTPHeaderField: "Referer")
+
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let subjects = json?["subjects"] as? [[String: Any]] ?? []
+            var keywords: [String] = []
+            for subject in subjects {
+                guard let title = subject["title"] as? String else { continue }
+                let keyword = cleanHotKeyword(title)
+                if !keyword.isEmpty && !keywords.contains(keyword) {
+                    keywords.append(keyword)
+                }
+            }
+            if !keywords.isEmpty {
+                return keywords
+            }
+        } catch {
+            AppLogger.debug("[SearchViewModel] 豆瓣热词加载失败: \(error)")
+        }
+        return defaultHotKeywords
+    }
+
+    /// 去掉书名号等符号，只取空格前的片名，如 "某剧 第二季" 取 "某剧"
+    private nonisolated static func cleanHotKeyword(_ title: String) -> String {
+        title.trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: "<|>|《|》|-", with: "", options: .regularExpression)
+            .components(separatedBy: " ")
+            .first ?? ""
     }
 }
 
