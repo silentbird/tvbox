@@ -44,7 +44,9 @@ struct FastSearchView: View {
     private var resultsGrid: some View {
         ScrollView {
             if results.isEmpty {
+                // 原生 macOS 的 ScrollView 会按内容收窄，空状态要撑满宽度
                 emptyState
+                    .frame(maxWidth: .infinity)
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 12)], spacing: 12) {
                     ForEach(results) { movie in
