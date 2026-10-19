@@ -308,13 +308,15 @@
 - ✅ Mac Catalyst 与原生 macOS 都能构建运行；Mac 上 Node 以子进程运行。
 - ✅ Mac 启动时配置解析不阻塞主线程。
 - ✅ 设置页、弹窗在 Mac/iPad 上不再分栏显示；原生 macOS 播放器窗口尺寸修复。
+- ✅ 宽窗口布局（`Platform/WideLayout.swift`，窗口宽 ≥ 900 且不是 iPhone 时启用）: 侧边栏代替底部 Tab；首页分类原地切换；详情左海报右信息；快速搜索左栏站点；搜索左栏输入/热词、右边多列结果；历史多列卡片加右键删除。对照 Android `activity_home`/`activity_detail`/`activity_fast_search`/`activity_search`/`activity_history`。
 
 待办:
 - [ ] 决定 Mac 主线: Catalyst 还是原生 macOS（现在两者都在构建，Xcode 默认「My Mac」是原生版）。
 - [ ] Mac 键盘: 空格播放/暂停、左右快退快进、上下切台、ESC 退出全屏。
 - [ ] Mac 菜单栏: 打开配置、刷新、播放控制、全屏。
 - [ ] 播放器全屏与窗口尺寸适配。
-- [ ] iPad 分栏布局。
+- [ ] iPad 分栏布局: 宽布局已在横屏 iPad 上生效，未在 iPad 模拟器上实测。
+- [ ] 宽布局待做: 播放器控制条、直播叠加面板（等对应功能补齐后再照 Android 改）；设置页改用 Mac 原生设置窗口。
 - [ ] Mac 上架前: 开启 App Sandbox 后验证 node 子进程；需要支持 Intel 时打包 x86_64 版 node。
 - [ ] 深色模式完整检查。
 
