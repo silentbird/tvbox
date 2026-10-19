@@ -35,6 +35,7 @@ class ApiConfig: ObservableObject {
         static let homeApi = "home_api"
         static let defaultParse = "default_parse"
         static let cachedConfig = "cached_config"
+        static let websiteBundleSiteMetas = "website_bundle_site_metas"
     }
     
     private init() {
@@ -199,6 +200,7 @@ class ApiConfig: ObservableObject {
         if !url.isEmpty {
             let cacheKey = "\(Keys.cachedConfig)_\(url.md5)"
             userDefaults.removeObject(forKey: cacheKey)
+            userDefaults.removeObject(forKey: Keys.websiteBundleSiteMetas)
             AppLogger.debug("[ApiConfig] 已清除缓存: \(cacheKey)")
         }
     }
@@ -330,16 +332,20 @@ class ApiConfig: ObservableObject {
             }
         }
 
+        // 原生静态解析几 MB 的配置包要几十秒，放在主线程会让 Mac 上窗口迟迟出不来
+        let bundleSites = isWebsiteBundleSource(content)
+            ? extractWebsiteBundleSites(from: content, scriptUrl: normalizeUrl(apiUrl))
+            : []
         try await MainActor.run {
-            try parseConfig(scriptContent: content, apiUrl: apiUrl)
+            try parseConfig(scriptContent: content, apiUrl: apiUrl, bundleSites: bundleSites)
         }
     }
 
-    private func parseConfig(scriptContent: String, apiUrl: String) throws {
+    private func parseConfig(scriptContent: String, apiUrl: String, bundleSites: [SiteBean]) throws {
         AppLogger.debug("[parseConfig] 开始解析配置...")
         
         if isWebsiteBundleSource(scriptContent) {
-            parseJavaScriptSourceConfig(scriptContent: scriptContent, scriptUrl: normalizeUrl(apiUrl))
+            parseJavaScriptSourceConfig(bundleSites: bundleSites, scriptUrl: normalizeUrl(apiUrl))
             return
         }
 
@@ -390,7 +396,7 @@ class ApiConfig: ObservableObject {
         return components.url
     }
     
-    private func parseJavaScriptSourceConfig(scriptContent: String, scriptUrl: String) {
+    private func parseJavaScriptSourceConfig(bundleSites: [SiteBean], scriptUrl: String) {
         AppLogger.debug("[parseConfig] 检测到 JS 视频源入口，按 JS 源配置处理: \(scriptUrl)")
         
         spider = scriptUrl
@@ -402,7 +408,6 @@ class ApiConfig: ObservableObject {
         adHosts = []
         loadDefaultAds()
         
-        let bundleSites = extractWebsiteBundleSites(from: scriptContent, scriptUrl: scriptUrl)
         let fallbackSite = SiteBean(
             key: "ios_website_bundle_source",
             name: "Cat WebsiteBundle",
@@ -699,7 +704,7 @@ class ApiConfig: ObservableObject {
         return adaptedSite
     }
 
-    private struct WebsiteBundleSiteMeta {
+    private struct WebsiteBundleSiteMeta: Codable {
         let key: String
         let name: String
         let type: Int
@@ -763,7 +768,33 @@ class ApiConfig: ObservableObject {
         }
     }
 
+    private struct CachedWebsiteBundleSiteMetas: Codable {
+        let contentHash: String
+        let metas: [WebsiteBundleSiteMeta]
+    }
+
+    /// 静态解析几 MB 的配置包要几十秒，按配置包内容 md5 缓存最近一次的提取结果。
+    /// nativeAdapter 每次重新计算，App 新增原生适配后不需要清缓存。
     private func extractAllWebsiteBundleSiteMetas(from scriptContent: String) -> [WebsiteBundleSiteMeta] {
+        let contentHash = scriptContent.md5
+        if let data = userDefaults.data(forKey: Keys.websiteBundleSiteMetas),
+           let cached = try? JSONDecoder().decode(CachedWebsiteBundleSiteMetas.self, from: data),
+           cached.contentHash == contentHash {
+            AppLogger.debug("[parseConfig] 使用缓存的配置包站点列表，站点数: \(cached.metas.count)")
+            return cached.metas.map {
+                WebsiteBundleSiteMeta(key: $0.key, name: $0.name, type: $0.type, nativeAdapter: nativeAdapter(forWebsiteBundleKey: $0.key))
+            }
+        }
+
+        let metas = parseAllWebsiteBundleSiteMetas(from: scriptContent)
+        if !metas.isEmpty,
+           let data = try? JSONEncoder().encode(CachedWebsiteBundleSiteMetas(contentHash: contentHash, metas: metas)) {
+            userDefaults.set(data, forKey: Keys.websiteBundleSiteMetas)
+        }
+        return metas
+    }
+
+    private func parseAllWebsiteBundleSiteMetas(from scriptContent: String) -> [WebsiteBundleSiteMeta] {
         extractWebsiteBundleRawMetas(from: scriptContent).compactMap { rawMeta in
             guard let key = evaluateWebsiteBundleMetaExpression(rawMeta.keyExpression, at: rawMeta.offset, in: scriptContent),
                   let name = evaluateWebsiteBundleMetaExpression(rawMeta.nameExpression, at: rawMeta.offset, in: scriptContent),
