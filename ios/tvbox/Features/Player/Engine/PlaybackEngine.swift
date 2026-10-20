@@ -47,6 +47,55 @@ enum VideoScale: Int, CaseIterable, Identifiable {
     }
 }
 
+/// 字幕的字号、颜色、延时，所有视频共用，对应 Android 的 SubtitleHelper
+struct SubtitleStyle: Codable, Equatable {
+    /// 和 Android 一样 12...60，每次加减 2
+    var fontSize: CGFloat
+    /// 对应 Android 的「字幕样式二」(粉色)，默认白色
+    var isPink = false
+    /// 延时 (秒)，正数表示字幕推后显示，每次加减 0.5
+    var delay: Double = 0
+    /// 上移的距离，占画面高度的百分比，负数是下移，对应 Android 的「字幕上移/下移」
+    var position: Double = 0
+
+    static let fontSizeRange: ClosedRange<CGFloat> = 12...60
+    /// 下移到贴底为止
+    static let positionRange: ClosedRange<Double> = -defaultBottomPercent...80
+    /// 字幕默认离底部的距离占画面高度的百分比，和 Android 的 Exo 字幕一样
+    private static let defaultBottomPercent: Double = 8
+    private static let storageKey = "subtitle_style"
+
+    /// 默认字号和 Android 一样按屏幕大小来
+    @MainActor
+    static var defaultFontSize: CGFloat {
+        #if os(iOS) && !targetEnvironment(macCatalyst)
+        return UIDevice.current.userInterfaceIdiom == .phone ? 18 : 24
+        #else
+        return 24
+        #endif
+    }
+
+    /// 字幕底部离画面底部的距离占画面高度的比例
+    var bottomFraction: CGFloat {
+        CGFloat(Self.defaultBottomPercent + position) / 100
+    }
+
+    @MainActor
+    static func load() -> SubtitleStyle {
+        if let data = UserDefaults.standard.data(forKey: storageKey),
+           let style = try? JSONDecoder().decode(SubtitleStyle.self, from: data) {
+            return style
+        }
+        return SubtitleStyle(fontSize: defaultFontSize)
+    }
+
+    func save() {
+        if let data = try? JSONEncoder().encode(self) {
+            UserDefaults.standard.set(data, forKey: Self.storageKey)
+        }
+    }
+}
+
 /// 播放内核。播放页只通过它控制播放，新增播放器时实现这个协议并加到 PlayerKind。
 @MainActor
 protocol PlaybackEngine: AnyObject {
@@ -76,6 +125,9 @@ protocol PlaybackEngine: AnyObject {
     func setScale(_ scale: VideoScale)
     func selectAudioTrack(id: String)
     func selectSubtitle(id: String?)
+    /// 下载并解析外挂字幕 (SRT/ASS/VTT)，加到字幕列表里但不选中，返回字幕 id
+    func loadSubtitle(url: URL, name: String) async throws -> String
+    func setSubtitleStyle(_ style: SubtitleStyle)
     func stop()
 }
 

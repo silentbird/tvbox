@@ -21,7 +21,7 @@
 | 9 | 历史与收藏 | ✅ | 历史（含每集进度）、收藏、搜索历史、配置历史可用 |
 | 10 | 设置 | 🟡 | 配置/站点/解析/配置中心可用；播放设置不保存也不生效 |
 | 11 | 网盘与配置中心 | 🟡 | Node 配置包自带网盘和配置中心，已接入；扫码登录后的网盘播放未实测 |
-| 12 | 字幕 | ❌ | |
+| 12 | 字幕 | 🟡 | 内嵌/站点/本地/在线字幕（迅雷、射手网(伪)、OpenSubtitles）、字号/颜色/延时/位置都已做 |
 | 13 | 弹幕 | ❌ | |
 | 14 | 网络增强与去广告 | ❌ | `ads`/`hosts` 字段解析了但没人用 |
 | 15 | 远程控制、推送、投屏 | ❌ | |
@@ -163,7 +163,6 @@
 - [ ] AirPlay 投屏（见第 15 类）。
 - [ ] 播放失败自动换线路/换解析（Android「自动换线」）；换解析等 `parses` 有数据后再做。
 - [ ] 后台播放与锁屏控制: `AVAudioSession`、`MPNowPlayingInfoCenter`、`MPRemoteCommandCenter`（对照 `MusicPlaybackService`）。
-- [ ] 外挂字幕（见第 12 类）。
 - [ ] 外部播放器（可选）: 通过 URL scheme 交给 VLC/Infuse，对照 `player/thirdparty`。
 - [ ] 其它内核（如 mpv）: 实现 `PlaybackEngine`，加到 `PlayerKind`，播放设置面板再加「播放器」选项。
 
@@ -247,17 +246,28 @@
 - [ ] 真机上再验证一遍（iOS 真机后台限制和模拟器不同）。
 - [ ] Node 方案覆盖后，决定原生网盘兜底代码是否保留（原 TODO 里的 UC/阿里/天翼/123 provider 搬运可以不做）。
 
-## 12. 字幕 ❌
+## 12. 字幕 🟡
 
 - Android: `subtitle/*`（`SubtitleEngine`、`SubtitleLoader`、`SubtitleFinder`、`format/*`）、`ui/dialog/SubtitleDialog.java`、`SearchSubtitleDialog.java`、`util/SubtitleHelper.java`
-- iOS: 无
+- iOS: `Features/Player/Engine/KSPlaybackEngine.swift`（解析用 KSPlayer 自带的 SRT/ASS/VTT，ASS 只显示文字）、`PlayerViewModel.swift`、`PlayerPanels.swift`、`SubtitleSearch*.swift`
+
+已完成:
+- ✅ 内嵌字幕轨选择；默认只选一条，优先中文，没有就选第一条（同 Android IJK 选「国语」）。
+- ✅ 站点 `play` 返回的 `subt`、`subs` 自动加载，默认选第一条（目前只有 Node 配置包站点会解析这两个字段）。
+- ✅ 本地字幕、在线字幕: 文件存到缓存目录并按集记住，下次打开这一集自动加载；「从头播放」清掉记住的字幕（同 Android `subtitleCacheKey`）。
+- ✅ 在线字幕，可切换网站（记住上次用的）:
+  - 迅雷（默认）: `api-shoulei-ssl.xunlei.com/oracle/subtitle?name=` 接口，无公开文档。中英文片名、「片名 S01E01」都能搜，结果按和当前视频的时长差排序，直接下载 srt/ass。
+  - 射手网(伪): 和 Android `SubtitleViewModel` 一样抓 assrt.net 网页，搜索 → 字幕包里的文件 → 下载。
+  - OpenSubtitles: 旧版 REST 接口 `rest.opensubtitles.org`（不用 API Key），简体/繁体/英文并发查，下载的 .gz 自己解压。只能用英文片名搜。
+- ✅ 字号 12–60、白色/粉色、延时 ±0.5 秒、位置上移/下移，所有视频共用并保存（同 Android `SubtitleHelper`）；延时对内嵌字幕也有效。
+- ✅ 文字字幕黑色描边（同 Android `SimpleSubtitleView`）；图形字幕（PGS 等）按画面缩放并跟随字号。
 
 待办:
-- [ ] 内嵌字幕轨选择（与第 6 类音轨一起做，AVPlayer 原生支持）。
-- [ ] 外挂字幕: SRT、ASS（先纯文本）、VTT 解析，叠加渲染到播放器。
-- [ ] 站点 `playerContent` 返回的字幕地址自动加载。
-- [ ] 字幕样式（字号、颜色、位置）和时间轴偏移。
-- [ ] 在线字幕搜索（对照 `SearchSubtitleDialog`）。
+- [ ] 在线字幕下载实测: 搜索和列文件已验证，下载会 302 到 `file0.assrt.net`，2026-10-20 在开发机网络上连不上（TLS 失败），也遇到过 402 限流。
+- [ ] 迅雷字幕接口没有公开文档，失效时在 `SubtitleSearch+Xunlei.swift` 修。
+- [ ] 字幕库（zimuku）: 2026-10-20 所有页面（包括首页）都先返回「网站防火墙」图片验证码页，字幕多是 rar/7z 压缩包，暂未接入。
+- [ ] OpenSubtitles 旧接口官方已不推荐，`TemporaryUserAgent` 随时可能失效；失效后改用新接口 `api.opensubtitles.com`（需要注册 API Key，下载有每日次数）。
+- [ ] JSON/JS 站点的 `subt` 字段（这几种 Spider 只解码了 `subs`）。
 
 ## 13. 弹幕 ❌
 

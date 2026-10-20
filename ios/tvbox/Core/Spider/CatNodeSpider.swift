@@ -64,6 +64,21 @@ final class CatNodeSpider: Spider {
             header = rawHeader.mapValues { "\($0)" }
         }
 
+        // 和 Android 一样，字幕可能在 subt (单个地址) 或 subs (列表) 里
+        var subs: [SubtitleInfo] = []
+        if let subt = object["subt"] as? String, !subt.isEmpty {
+            subs.append(SubtitleInfo(name: "", url: subt.replacingOccurrences(of: Self.dynamicHostPrefix, with: baseURL)))
+        }
+        for item in object["subs"] as? [[String: Any]] ?? [] {
+            guard let url = item["url"] as? String, !url.isEmpty else { continue }
+            subs.append(SubtitleInfo(
+                name: item["name"] as? String ?? "",
+                url: url.replacingOccurrences(of: Self.dynamicHostPrefix, with: baseURL),
+                lang: item["lang"] as? String,
+                format: item["format"] as? String
+            ))
+        }
+
         return PlayerContent(
             url: Self.playURL(from: object["url"]).replacingOccurrences(of: Self.dynamicHostPrefix, with: baseURL),
             header: header,
@@ -71,7 +86,8 @@ final class CatNodeSpider: Spider {
             jxFrom: object["jx"].map { "\($0)" },
             flag: flag,
             danmaku: object["danmaku"] as? String,
-            format: object["format"] as? String
+            format: object["format"] as? String,
+            subs: subs
         )
     }
 

@@ -10,6 +10,9 @@ final class KSPlaybackEngine: PlaybackEngine {
 
     private var playerLayer: KSPlayerLayer?
     private let subtitle = SubtitleState()
+    private var externalSubtitles: [URLSubtitleInfo] = []
+    /// 已经选过字幕 (默认的内嵌字幕、外挂字幕或用户手选)，不再自动选内嵌字幕
+    private var didSelectSubtitle = false
 
     init() {
         // 直接用 FFmpeg 内核，不先试 AVPlayer
@@ -57,11 +60,17 @@ final class KSPlaybackEngine: PlaybackEngine {
 
     var subtitleTracks: [PlaybackTrack] {
         subtitleInfos.map { PlaybackTrack(id: $0.subtitleID, name: $0.name) }
+            + externalSubtitles.map { PlaybackTrack(id: $0.subtitleID, name: $0.name) }
     }
 
-    /// KSPlayer 默认启用内嵌字幕里标了默认的那一条，和它保持一致
+    /// KSPlayer 默认启用内嵌字幕里标了默认的那一条，和它保持一致。
+    /// 内嵌字幕可能在选了外挂字幕之后才启用，这时以外挂字幕为准
+    private var enabledSubtitle: (any KSPlayer.SubtitleInfo)? {
+        externalSubtitles.first { $0.isEnabled } ?? subtitleInfos.first { $0.isEnabled }
+    }
+
     var selectedSubtitleID: String? {
-        subtitleInfos.first { $0.isEnabled }?.subtitleID
+        enabledSubtitle?.subtitleID
     }
 
     /// FFmpeg 会自己探测格式，不需要 format
@@ -109,16 +118,69 @@ final class KSPlaybackEngine: PlaybackEngine {
     }
 
     func selectSubtitle(id: String?) {
+        didSelectSubtitle = true
         for info in subtitleInfos {
             info.isEnabled = info.subtitleID == id
         }
+        for info in externalSubtitles {
+            info.isEnabled = info.subtitleID == id
+        }
         subtitle.parts = []
+        refreshSubtitle(at: currentTime)
+    }
+
+    func loadSubtitle(url: URL, name: String) async throws -> String {
+        let data = url.isFileURL ? try Data(contentsOf: url) : try await URLSession.shared.data(from: url).0
+        // 名字为空时 URLSubtitleInfo 会自己再下载一遍
+        let info = URLSubtitleInfo(subtitleID: url.absoluteString, name: name.isEmpty ? url.lastPathComponent : name, url: url)
+        try info.parse(data: data)
+        externalSubtitles.removeAll { $0.subtitleID == info.subtitleID }
+        externalSubtitles.append(info)
+        return info.subtitleID
+    }
+
+    func setSubtitleStyle(_ style: SubtitleStyle) {
+        subtitle.style = style
+        refreshSubtitle(at: currentTime)
+    }
+
+    /// KSPlayer 默认把所有文字字幕轨都启用。和 Android 一样只选一条：优先中文，没有就选第一条
+    private func selectDefaultSubtitleIfNeeded() {
+        guard !didSelectSubtitle else { return }
+        let infos = subtitleInfos
+        guard !infos.isEmpty else { return }
+        selectSubtitle(id: (infos.first(where: Self.isChinese) ?? infos[0]).subtitleID)
+    }
+
+    private static func isChinese(_ info: any KSPlayer.SubtitleInfo) -> Bool {
+        let code = ((info as? MediaPlayerTrack)?.languageCode ?? "").lowercased()
+        if ["chi", "zho", "chs", "cht"].contains(code) || code.hasPrefix("zh") {
+            return true
+        }
+        let name = info.name.lowercased()
+        return ["中", "简", "繁", "國", "国", "chinese", "chs", "cht"].contains { name.contains($0) }
+    }
+
+    private func refreshSubtitle(at time: TimeInterval) {
+        var parts: [SubtitlePart] = []
+        if let info = enabledSubtitle {
+            let time = time - subtitle.style.delay
+            parts = info.search(for: time)
+            // 内嵌字幕查到一次就从队列里取走了，之后查不到时保留还没到结束时间的，和 KSPlayer 的 SubtitleModel 一样
+            if parts.isEmpty {
+                parts = subtitle.parts.filter { $0 == time }
+            }
+        }
+        if parts != subtitle.parts {
+            subtitle.parts = parts
+        }
     }
 
     func stop() {
         playerLayer?.delegate = nil
         playerLayer?.stop()
         playerLayer = nil
+        externalSubtitles = []
         subtitle.parts = []
         onEvent = nil
     }
@@ -128,6 +190,7 @@ extension KSPlaybackEngine: KSPlayerLayerDelegate {
     func player(layer: KSPlayerLayer, state: KSPlayerState) {
         switch state {
         case .readyToPlay:
+            subtitle.videoSize = layer.player.naturalSize
             onEvent?(.ready(duration: layer.player.duration))
         case .buffering:
             onEvent?(.buffering(true))
@@ -139,10 +202,9 @@ extension KSPlaybackEngine: KSPlayerLayerDelegate {
     }
 
     func player(layer _: KSPlayerLayer, currentTime: TimeInterval, totalTime: TimeInterval) {
-        let parts = subtitleInfos.first { $0.isEnabled }?.search(for: currentTime) ?? []
-        if parts != subtitle.parts {
-            subtitle.parts = parts
-        }
+        // 内嵌字幕轨在 readyToPlay 之后才陆续出来
+        selectDefaultSubtitleIfNeeded()
+        refreshSubtitle(at: currentTime)
         guard totalTime > 0 else { return }
         onEvent?(.progress(current: currentTime, duration: totalTime))
     }
@@ -170,32 +232,75 @@ private extension MediaPlayerTrack {
 @MainActor
 private final class SubtitleState: ObservableObject {
     @Published var parts: [SubtitlePart] = []
+    @Published var style = SubtitleStyle(fontSize: 18)
+    /// 视频分辨率，用来按画面缩放图形字幕
+    @Published var videoSize: CGSize = .zero
 }
 
 private struct SubtitleOverlay: View {
     @ObservedObject var state: SubtitleState
 
+    private static let horizontalPadding: CGFloat = 40
+
     var body: some View {
-        VStack(spacing: 4) {
-            Spacer()
-            ForEach(state.parts) { part in
-                if let image = part.image {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxHeight: 160)
-                } else if let text = part.text?.string {
-                    Text(text)
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundColor(.white)
-                        .shadow(color: .black.opacity(0.9), radius: 1, x: 1, y: 1)
-                        .multilineTextAlignment(.center)
+        GeometryReader { geometry in
+            VStack(spacing: 4) {
+                Spacer(minLength: 0)
+                ForEach(state.parts) { part in
+                    if let image = part.image {
+                        let size = imageSize(image.size, in: geometry.size)
+                        Image(uiImage: image)
+                            .resizable()
+                            .frame(width: size.width, height: size.height)
+                    } else if let text = part.text?.string {
+                        OutlinedText(
+                            text: text,
+                            fontSize: state.style.fontSize,
+                            // 粉色和 Android 的 color_FFB6C1 一样
+                            color: state.style.isPink ? Color(red: 1, green: 0.714, blue: 0.757) : .white
+                        )
+                    }
                 }
             }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, Self.horizontalPadding)
+            .padding(.bottom, geometry.size.height * state.style.bottomFraction)
         }
-        .padding(.horizontal, 40)
-        .padding(.bottom, 24)
         .allowsHitTesting(false)
+    }
+
+    /// 图形字幕是按视频像素画的，跟着画面缩放，再乘上字号相对默认字号的比例
+    private func imageSize(_ size: CGSize, in container: CGSize) -> CGSize {
+        guard size.width > 0, size.height > 0 else { return .zero }
+        let video = state.videoSize
+        var zoom: CGFloat = video.width > 0 && video.height > 0 ? min(container.width / video.width, container.height / video.height) : 1
+        zoom *= state.style.fontSize / SubtitleStyle.defaultFontSize
+        zoom = min(zoom, max(container.width - Self.horizontalPadding * 2, 0) / size.width)
+        return CGSize(width: size.width * zoom, height: size.height * zoom)
+    }
+}
+
+/// 黑色描边的字幕，和 Android 的 SimpleSubtitleView 一样，亮的画面上也看得清
+private struct OutlinedText: View {
+    let text: String
+    let fontSize: CGFloat
+    let color: Color
+
+    var body: some View {
+        let label = Text(text)
+            .font(.system(size: fontSize, weight: .medium))
+            .multilineTextAlignment(.center)
+        // 往 8 个方向各偏移一份黑字，叠出描边
+        let width = max(1, fontSize / 12)
+        ZStack {
+            ForEach(0..<8, id: \.self) { index in
+                let angle = Double(index) * .pi / 4
+                label
+                    .foregroundColor(.black)
+                    .offset(x: cos(angle) * width, y: sin(angle) * width)
+            }
+            label.foregroundColor(color)
+        }
     }
 }
 

@@ -15,6 +15,7 @@ class StorageManager {
         static let vodCollect = "vod_collect"
         static let playProgress = "play_progress"
         static let playerConfig = "player_config"
+        static let subtitleFile = "subtitle_file"
     }
     
     private init() {}
@@ -351,5 +352,21 @@ class StorageManager {
         } catch {
             AppLogger.debug("Failed to encode player config: \(error)")
         }
+    }
+
+    // MARK: - Subtitle
+
+    /// 手动选择的字幕文件放在这里，只记文件名，因为 App 目录的绝对路径会变
+    var subtitleDirectory: URL {
+        fileManager.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("subtitles", isDirectory: true)
+    }
+
+    /// 每集手动选择的字幕文件名，对应 Android 的 subtitleCacheKey
+    func getSubtitleFile(key: String) -> String? {
+        userDefaults.string(forKey: "\(Keys.subtitleFile)_\(key)")
+    }
+
+    func saveSubtitleFile(_ name: String?, key: String) {
+        userDefaults.set(name, forKey: "\(Keys.subtitleFile)_\(key)")
     }
 }

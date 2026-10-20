@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 播放页右侧弹出的面板
 enum PlayerPanel {
-    case settings, speed, episodes
+    case settings, speed, episodes, subtitleSearch
 }
 
 /// 右侧半透明面板，左边留出画面。遮罩由播放页单独淡入，不跟着面板滑动
@@ -94,6 +94,8 @@ private struct PanelHeader: View {
 
 struct PlayerSettingsPanel: View {
     @ObservedObject var viewModel: PlayerViewModel
+    let onOpenSubtitleFile: () -> Void
+    let onSearchSubtitle: () -> Void
 
     var body: some View {
         ScrollView {
@@ -127,8 +129,8 @@ struct PlayerSettingsPanel: View {
                     }
                 }
 
-                if !viewModel.subtitleTracks.isEmpty {
-                    PanelSection(title: "字幕") {
+                PanelSection(title: "字幕", note: "样式对所有视频生效") {
+                    VStack(alignment: .leading, spacing: 10) {
                         FlowLayout(spacing: 6) {
                             PanelChip(title: "关", isSelected: viewModel.selectedSubtitleID == nil) {
                                 viewModel.selectSubtitle(id: nil)
@@ -137,6 +139,38 @@ struct PlayerSettingsPanel: View {
                                 PanelChip(title: track.name, isSelected: viewModel.selectedSubtitleID == track.id) {
                                     viewModel.selectSubtitle(id: track.id)
                                 }
+                            }
+                            PanelChip(title: "本地字幕…", action: onOpenSubtitleFile)
+                            PanelChip(title: "在线字幕…", action: onSearchSubtitle)
+                        }
+                        stepperRow(
+                            title: "字号",
+                            value: "\(Int(viewModel.subtitleStyle.fontSize))",
+                            minus: { viewModel.updateSubtitleStyle { $0.fontSize -= 2 } },
+                            plus: { viewModel.updateSubtitleStyle { $0.fontSize += 2 } }
+                        )
+                        stepperRow(
+                            title: "延时",
+                            value: formatDelay(viewModel.subtitleStyle.delay),
+                            minus: { viewModel.updateSubtitleStyle { $0.delay -= 0.5 } },
+                            plus: { viewModel.updateSubtitleStyle { $0.delay += 0.5 } }
+                        )
+                        stepperRow(
+                            title: "位置",
+                            value: viewModel.subtitleStyle.position == 0 ? "默认" : String(format: "%+.0f%%", viewModel.subtitleStyle.position),
+                            minus: { viewModel.updateSubtitleStyle { $0.position -= 2 } },
+                            plus: { viewModel.updateSubtitleStyle { $0.position += 2 } }
+                        )
+                        HStack(spacing: 6) {
+                            Text("颜色")
+                                .font(.subheadline)
+                                .foregroundColor(.white.opacity(0.7))
+                            Spacer()
+                            PanelChip(title: "白色", isSelected: !viewModel.subtitleStyle.isPink) {
+                                viewModel.updateSubtitleStyle { $0.isPink = false }
+                            }
+                            PanelChip(title: "粉色", isSelected: viewModel.subtitleStyle.isPink) {
+                                viewModel.updateSubtitleStyle { $0.isPink = true }
                             }
                         }
                     }
@@ -165,6 +199,37 @@ struct PlayerSettingsPanel: View {
         }
     }
 
+    /// 正数表示字幕推后
+    private func formatDelay(_ delay: Double) -> String {
+        delay == 0 ? "0 秒" : String(format: "%+.1f 秒", delay)
+    }
+
+    private func stepperRow(title: String, value: String, minus: @escaping () -> Void, plus: @escaping () -> Void) -> some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .foregroundColor(.white.opacity(0.7))
+            Spacer()
+            stepButton("minus", action: minus)
+            Text(value)
+                .foregroundColor(.white)
+                .monospacedDigit()
+                .frame(minWidth: 64)
+            stepButton("plus", action: plus)
+        }
+        .font(.subheadline)
+    }
+
+    private func stepButton(_ systemName: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.white.opacity(0.8))
+                .frame(width: 32, height: 28)
+                .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(0.1)))
+        }
+        .buttonStyle(.plain)
+    }
+
     private func skipRow(title: String, time: Double, set: @escaping () -> Void, clear: @escaping () -> Void) -> some View {
         HStack(spacing: 10) {
             Text(title)
@@ -191,6 +256,189 @@ struct PlayerSettingsPanel: View {
             }
         }
         .font(.subheadline)
+    }
+}
+
+// MARK: - 在线字幕
+
+/// 对应 Android 的 SearchSubtitleDialog，可以切换字幕网站。字幕包要先点开再选里面的文件
+struct PlayerSubtitleSearchPanel: View {
+    @ObservedObject var viewModel: PlayerViewModel
+    /// 默认搜索词，用片名
+    let keyword: String
+    let onLoaded: () -> Void
+
+    /// 记住上次用的字幕网站
+    @AppStorage("subtitle_search_source") private var source: SubtitleSearch.Source = .xunlei
+    @State private var query = ""
+    @State private var results: [SubtitleSearch.Item] = []
+    @State private var page = 0
+    @State private var pageCount = 0
+    /// 打开的字幕包和里面的文件，nil 时显示搜索结果
+    @State private var opened: (item: SubtitleSearch.Item, files: [SubtitleSearch.Item])?
+    @State private var isLoading = false
+    @State private var message: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            PanelHeader(title: "在线字幕")
+
+            HStack(spacing: 6) {
+                ForEach(SubtitleSearch.Source.allCases) { item in
+                    PanelChip(title: item.name, isSelected: source == item) {
+                        guard source != item else { return }
+                        source = item
+                        search(page: 1)
+                    }
+                }
+            }
+            .disabled(isLoading)
+
+            HStack(spacing: 8) {
+                TextField("片名", text: $query)
+                    .textFieldStyle(.plain)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(0.1)))
+                    .onSubmit { search(page: 1) }
+                PanelChip(title: "搜索") { search(page: 1) }
+            }
+            .disabled(isLoading)
+
+            if let hint = source.hint {
+                Text(hint)
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.5))
+            }
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    if let opened {
+                        row(title: "‹ 返回搜索结果", isSecondary: true) {
+                            self.opened = nil
+                            message = nil
+                        }
+                        Text(opened.item.name)
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.5))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                        ForEach(opened.files) { file in
+                            row(title: file.name) { load(file) }
+                        }
+                    } else {
+                        ForEach(results) { item in
+                            row(title: item.name, detail: item.detail) {
+                                if item.isPackage {
+                                    open(item)
+                                } else {
+                                    load(item)
+                                }
+                            }
+                        }
+                        if page < pageCount, !isLoading {
+                            row(title: "加载更多", isSecondary: true) { search(page: page + 1) }
+                        }
+                    }
+
+                    if isLoading {
+                        ProgressView()
+                            .tint(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                    } else if let message {
+                        Text(message)
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.6))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                    }
+                }
+            }
+            .disabled(isLoading)
+        }
+        .padding(20)
+        .onAppear {
+            guard query.isEmpty else { return }
+            query = keyword
+            search(page: 1)
+        }
+    }
+
+    private func row(title: String, detail: String? = nil, isSecondary: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.subheadline)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .foregroundColor(isSecondary ? .orange : .white.opacity(0.85))
+                if let detail {
+                    Text(detail)
+                        .font(.caption)
+                        .lineLimit(1)
+                        .foregroundColor(.white.opacity(0.5))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(isSecondary ? 0 : 0.06)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func search(page: Int) {
+        let keyword = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !keyword.isEmpty else { return }
+        if page == 1 {
+            results = []
+            opened = nil
+        }
+        let source = source
+        let duration = viewModel.duration
+        run {
+            let result = try await SubtitleSearch.search(keyword, page: page, source: source, duration: duration)
+            results = page == 1 ? result.items : results + result.items
+            self.page = page
+            pageCount = result.pageCount
+            opened = nil
+            if results.isEmpty {
+                message = "没有找到字幕"
+            }
+        }
+    }
+
+    private func open(_ item: SubtitleSearch.Item) {
+        run {
+            let files = try await SubtitleSearch.files(in: item)
+            opened = (item, files)
+            if files.isEmpty {
+                message = "这个字幕包里没有支持的格式 (SRT、ASS、VTT)"
+            }
+        }
+    }
+
+    private func load(_ file: SubtitleSearch.Item) {
+        run {
+            try await viewModel.loadOnlineSubtitle(file)
+            onLoaded()
+        }
+    }
+
+    private func run(_ operation: @escaping () async throws -> Void) {
+        isLoading = true
+        message = nil
+        Task {
+            do {
+                try await operation()
+            } catch {
+                message = error.localizedDescription
+            }
+            isLoading = false
+        }
     }
 }
 

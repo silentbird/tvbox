@@ -1,7 +1,8 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// 剧集的真实播放地址
-typealias PlayAddress = (url: URL, headers: [String: String]?, format: String?)
+typealias PlayAddress = (url: URL, headers: [String: String]?, format: String?, subtitles: [SubtitleInfo])
 
 /// 向站点获取剧集的真实播放地址，需要解析时一并解析。详情页和观看历史共用
 @MainActor
@@ -15,7 +16,8 @@ func resolvePlayAddress(site: SiteBean, flag: String, episode: VodInfo.VodPlayIt
         content.playUrl = nil
     }
 
-    // 2. 如果需要解析
+    // 2. 如果需要解析。解析结果里没有字幕，用站点给的
+    let subtitles = content.subs ?? []
     if content.needParse {
         content = try await ParserManager.shared.parse(content: content)
     }
@@ -25,7 +27,7 @@ func resolvePlayAddress(site: SiteBean, flag: String, episode: VodInfo.VodPlayIt
         throw ParserError.invalidUrl
     }
 
-    return (url, content.header, content.format)
+    return (url, content.header, content.format, subtitles)
 }
 
 struct PlayerView: View {
@@ -58,6 +60,7 @@ struct PlayerView: View {
     @State private var level: (isVolume: Bool, value: Double)?
     /// 双击快退快进的提示
     @State private var skipFeedback: PlayerTapZone?
+    @State private var isImportingSubtitle = false
     @FocusState private var isFocused: Bool
     #if os(macOS)
     /// 控制条上弹出的倍速、字幕音轨菜单
@@ -74,6 +77,8 @@ struct PlayerView: View {
     /// 横滑一个屏幕宽度调整的时长 (秒)，和 Android 一样
     private static let panSeekRange: Double = 120
     private static let skipSeconds: Double = 10
+    /// 本地字幕能选的文件，KSPlayer 能解析这几种
+    private static let subtitleFileTypes: [UTType] = ["srt", "ass", "ssa", "vtt"].compactMap { UTType(filenameExtension: $0) } + [.plainText]
     #if os(macOS)
     private static let hideControlsDelay: UInt64 = 3_000_000_000
     #else
@@ -164,6 +169,11 @@ struct PlayerView: View {
         #endif
         .tvboxStatusBar(hidden: true)
         .toast(message: viewModel.toastMessage, isShowing: $viewModel.showToast)
+        .fileImporter(isPresented: $isImportingSubtitle, allowedContentTypes: Self.subtitleFileTypes) { result in
+            if case .success(let url) = result {
+                viewModel.openSubtitleFile(url)
+            }
+        }
         .focusable()
         .focused($isFocused)
         .focusEffectDisabled()
@@ -638,11 +648,17 @@ struct PlayerView: View {
         PlayerSidePanel(width: width) {
             switch panel {
             case .settings:
-                PlayerSettingsPanel(viewModel: viewModel)
+                PlayerSettingsPanel(
+                    viewModel: viewModel,
+                    onOpenSubtitleFile: openSubtitleFile,
+                    onSearchSubtitle: { openPanel(.subtitleSearch) }
+                )
             case .speed:
                 PlayerSpeedPanel(viewModel: viewModel, onSelect: closePanel)
             case .episodes:
                 PlayerEpisodesPanel(viewModel: viewModel, onSelect: closePanel)
+            case .subtitleSearch:
+                PlayerSubtitleSearchPanel(viewModel: viewModel, keyword: title, onLoaded: closePanel)
             }
         }
     }
@@ -664,6 +680,14 @@ struct PlayerView: View {
             panel = nil
         }
         scheduleHideControls()
+    }
+
+    private func openSubtitleFile() {
+        #if os(macOS)
+        macMenu = nil
+        #endif
+        closePanel()
+        isImportingSubtitle = true
     }
 
     // MARK: - 按钮
@@ -900,14 +924,12 @@ extension PlayerView {
                 if !viewModel.episodes.isEmpty {
                     macTextButton("选集", help: "选集") { openPanel(.episodes) }
                 }
-                if !viewModel.subtitleTracks.isEmpty || viewModel.audioTracks.count > 1 {
-                    macIconButton("captions.bubble", help: "字幕与音轨") { toggleMacMenu(.tracks) }
-                        .overlay(alignment: .bottomTrailing) {
-                            if macMenu == .tracks {
-                                tracksMenu.offset(y: -44)
-                            }
+                macIconButton("captions.bubble", help: "字幕与音轨") { toggleMacMenu(.tracks) }
+                    .overlay(alignment: .bottomTrailing) {
+                        if macMenu == .tracks {
+                            tracksMenu.offset(y: -44)
                         }
-                }
+                    }
                 macIconButton("gearshape", help: "播放设置") { openPanel(.settings) }
                 macIconButton(
                     isFullScreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
@@ -943,26 +965,24 @@ extension PlayerView {
 
     private var tracksMenu: some View {
         macMenuPanel(width: 220) {
-            if !viewModel.subtitleTracks.isEmpty {
-                macMenuHeader("字幕")
-                macMenuRow("关", isSelected: viewModel.selectedSubtitleID == nil) {
-                    viewModel.selectSubtitle(id: nil)
+            macMenuHeader("字幕")
+            macMenuRow("关", isSelected: viewModel.selectedSubtitleID == nil) {
+                viewModel.selectSubtitle(id: nil)
+                closeMacMenu()
+            }
+            ForEach(viewModel.subtitleTracks) { track in
+                macMenuRow(track.name, isSelected: viewModel.selectedSubtitleID == track.id) {
+                    viewModel.selectSubtitle(id: track.id)
                     closeMacMenu()
                 }
-                ForEach(viewModel.subtitleTracks) { track in
-                    macMenuRow(track.name, isSelected: viewModel.selectedSubtitleID == track.id) {
-                        viewModel.selectSubtitle(id: track.id)
-                        closeMacMenu()
-                    }
-                }
             }
+            macMenuRow("本地字幕…", isSelected: false, action: openSubtitleFile)
+            macMenuRow("在线字幕…", isSelected: false) { openPanel(.subtitleSearch) }
             if viewModel.audioTracks.count > 1 {
-                if !viewModel.subtitleTracks.isEmpty {
-                    Divider()
-                        .overlay(Color.white.opacity(0.1))
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 4)
-                }
+                Divider()
+                    .overlay(Color.white.opacity(0.1))
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 4)
                 macMenuHeader("音轨")
                 ForEach(viewModel.audioTracks) { track in
                     macMenuRow(track.name, isSelected: viewModel.selectedAudioTrackID == track.id) {

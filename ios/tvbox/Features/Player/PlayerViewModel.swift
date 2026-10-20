@@ -29,6 +29,8 @@ final class PlayerViewModel: ObservableObject {
     /// 播放器音量 0...1，换集后沿用
     @Published private(set) var volume: Float = 1
     @Published private(set) var isMuted = false
+    /// 字幕字号、颜色、延时，所有视频共用
+    @Published private(set) var subtitleStyle = SubtitleStyle.load()
 
     @Published var showToast = false
     @Published private(set) var toastMessage = ""
@@ -42,6 +44,7 @@ final class PlayerViewModel: ObservableObject {
     private var resolveTask: Task<Void, Never>?
     private var upNextTask: Task<Void, Never>?
     private var speedTask: Task<Void, Never>?
+    private var subtitleTask: Task<Void, Never>?
 
     /// 当前剧集的播放地址，重新加载时复用
     private var address: PlayAddress?
@@ -86,6 +89,11 @@ final class PlayerViewModel: ObservableObject {
         VideoScale(rawValue: config.scale) ?? .default
     }
 
+    /// 按集记住手动选的字幕，和 Android 的 subtitleCacheKey 一样区分线路
+    private var subtitleKey: String {
+        "\(configKey)_\(currentFlag)_\(currentEpisode?.name ?? "")"
+    }
+
     func start(
         sources: [PlaySource],
         sourceIndex: Int,
@@ -127,9 +135,10 @@ final class PlayerViewModel: ObservableObject {
         play(sourceIndex: sourceIndex, episodeIndex: episodeIndex, startPosition: isReady ? currentTime : pendingSeekPosition)
     }
 
-    /// 从头播放，对应 Android 的「重播」
+    /// 从头播放，对应 Android 的「重播」。和 Android 一样清掉这一集记住的字幕，下次打开不再自动加载
     func replay() {
         guard let engine else { return }
+        StorageManager.shared.saveSubtitleFile(nil, key: subtitleKey)
         didPlayToEnd = false
         didCancelUpNext = false
         cancelUpNext()
@@ -181,7 +190,9 @@ final class PlayerViewModel: ObservableObject {
             self?.handle(event)
         }
         engine.load(url: address.url, headers: address.headers ?? [:], format: address.format)
+        engine.setSubtitleStyle(subtitleStyle)
         self.engine = engine
+        loadSubtitles(address.subtitles, into: engine)
     }
 
     private func handle(_ event: PlaybackEvent) {
@@ -390,6 +401,87 @@ final class PlayerViewModel: ObservableObject {
         objectWillChange.send()
     }
 
+    /// 和 Android 一样，这一集上次手动选的字幕优先，其次是站点给的第一条
+    private func loadSubtitles(_ subtitles: [SubtitleInfo], into engine: PlaybackEngine) {
+        var candidates: [(url: URL, name: String)] = []
+        if let file = StorageManager.shared.getSubtitleFile(key: subtitleKey) {
+            candidates.append((StorageManager.shared.subtitleDirectory.appendingPathComponent(file), file))
+        }
+        for (index, subtitle) in subtitles.enumerated() {
+            guard let url = URL(string: subtitle.url) else { continue }
+            candidates.append((url, subtitle.name.isEmpty ? "外挂字幕 \(index + 1)" : subtitle.name))
+        }
+        guard !candidates.isEmpty else { return }
+
+        subtitleTask = Task {
+            var didSelect = false
+            for candidate in candidates {
+                do {
+                    let id = try await engine.loadSubtitle(url: candidate.url, name: candidate.name)
+                    guard !Task.isCancelled else { return }
+                    if !didSelect {
+                        engine.selectSubtitle(id: id)
+                        didSelect = true
+                    }
+                    objectWillChange.send()
+                } catch {
+                    AppLogger.debug("[Player] 字幕加载失败 \(candidate.url): \(error)")
+                }
+            }
+        }
+    }
+
+    /// 加载本地字幕文件，对应 Android 的「本地字幕」
+    func openSubtitleFile(_ url: URL) {
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer {
+            if accessing { url.stopAccessingSecurityScopedResource() }
+        }
+        guard let data = try? Data(contentsOf: url) else {
+            showToast(message: "读取字幕文件失败")
+            return
+        }
+        Task {
+            do {
+                try await addSubtitleFile(data: data, name: url.lastPathComponent)
+            } catch {
+                showToast(message: "字幕解析失败，支持 SRT、ASS、VTT")
+            }
+        }
+    }
+
+    /// 下载并加载在线搜到的字幕，对应 Android 的「在线搜索字幕」
+    func loadOnlineSubtitle(_ file: SubtitleSearch.Item) async throws {
+        let data = try await SubtitleSearch.download(file)
+        try await addSubtitleFile(data: data, name: file.name)
+    }
+
+    /// 字幕文件存到缓存目录，加载并选中，记给这一集。存一份是为了下次打开这一集时不用再授权或下载
+    private func addSubtitleFile(data: Data, name: String) async throws {
+        guard let engine else { return }
+        let key = subtitleKey
+        let name = (name as NSString).lastPathComponent
+        let directory = StorageManager.shared.subtitleDirectory
+        let destination = directory.appendingPathComponent(name)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try data.write(to: destination)
+
+        let id = try await engine.loadSubtitle(url: destination, name: name)
+        guard self.engine === engine else { return }
+        engine.selectSubtitle(id: id)
+        StorageManager.shared.saveSubtitleFile(name, key: key)
+        objectWillChange.send()
+    }
+
+    /// 改字号、颜色、延时，马上生效并保存
+    func updateSubtitleStyle(_ update: (inout SubtitleStyle) -> Void) {
+        update(&subtitleStyle)
+        subtitleStyle.fontSize = min(max(subtitleStyle.fontSize, SubtitleStyle.fontSizeRange.lowerBound), SubtitleStyle.fontSizeRange.upperBound)
+        subtitleStyle.position = min(max(subtitleStyle.position, SubtitleStyle.positionRange.lowerBound), SubtitleStyle.positionRange.upperBound)
+        subtitleStyle.save()
+        engine?.setSubtitleStyle(subtitleStyle)
+    }
+
     // MARK: - 其它
 
     private func showToast(message: String) {
@@ -430,6 +522,7 @@ final class PlayerViewModel: ObservableObject {
     }
 
     private func tearDownEngine() {
+        subtitleTask?.cancel()
         engine?.stop()
         engine = nil
         isReady = false
@@ -446,7 +539,7 @@ final class PlayerViewModel: ObservableObject {
         tearDownEngine()
     }
 
-    static func formatTime(_ time: TimeInterval) -> String {
+    nonisolated static func formatTime(_ time: TimeInterval) -> String {
         guard time.isFinite && time >= 0 else { return "00:00" }
 
         let hours = Int(time) / 3600
