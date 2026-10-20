@@ -26,6 +26,9 @@ final class PlayerViewModel: ObservableObject {
     @Published private(set) var upNextCountdown: Int?
     /// 每秒下载的字节数，内核测不到时为 nil (如 HLS 的分片不经过顶层 IO)
     @Published private(set) var networkSpeed: Int64?
+    /// 播放器音量 0...1，换集后沿用
+    @Published private(set) var volume: Float = 1
+    @Published private(set) var isMuted = false
 
     @Published var showToast = false
     @Published private(set) var toastMessage = ""
@@ -188,6 +191,7 @@ final class PlayerViewModel: ObservableObject {
             self.duration = duration
             engine?.setRate(config.speed)
             engine?.setScale(scale)
+            engine?.volume = isMuted ? 0 : volume
             // 和 Android 一样，续播位置还在片头里时直接跳过片头
             var position = pendingSeekPosition
             pendingSeekPosition = 0
@@ -300,9 +304,21 @@ final class PlayerViewModel: ObservableObject {
 
     /// 播放器音量，macOS 用方向键调
     func adjustVolume(by delta: Float) {
-        guard let engine else { return }
-        engine.volume += delta
-        showToast(message: "音量 \(Int((engine.volume * 100).rounded()))%")
+        guard engine != nil else { return }
+        setVolume((isMuted ? 0 : volume) + delta)
+        showToast(message: "音量 \(Int((volume * 100).rounded()))%")
+    }
+
+    /// 改音量会取消静音
+    func setVolume(_ value: Float) {
+        volume = min(max(value, 0), 1)
+        isMuted = false
+        engine?.volume = volume
+    }
+
+    func toggleMute() {
+        isMuted.toggle()
+        engine?.volume = isMuted ? 0 : volume
     }
 
     // MARK: - 播放设置
@@ -313,6 +329,14 @@ final class PlayerViewModel: ObservableObject {
         if !isBoosting {
             engine?.setRate(speed)
         }
+    }
+
+    /// 切到倍速选项里的上一档或下一档，macOS 用 [ ] 键
+    func stepSpeed(by step: Int) {
+        let current = Self.speedOptions.firstIndex(of: config.speed) ?? Self.speedOptions.firstIndex(of: 1) ?? 0
+        let index = min(max(current + step, 0), Self.speedOptions.count - 1)
+        setSpeed(Self.speedOptions[index])
+        showToast(message: "倍速 \(formatSpeed(Self.speedOptions[index]))")
     }
 
     func setScale(_ scale: VideoScale) {

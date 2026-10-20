@@ -5,17 +5,14 @@ enum PlayerPanel {
     case settings, speed, episodes
 }
 
-/// 右侧半透明面板，左边留出画面，点空白处关闭
+/// 右侧半透明面板，左边留出画面。遮罩由播放页单独淡入，不跟着面板滑动
 struct PlayerSidePanel<Content: View>: View {
     let width: CGFloat
-    let onClose: () -> Void
     @ViewBuilder let content: Content
 
     var body: some View {
         HStack(spacing: 0) {
-            Color.black.opacity(0.25)
-                .contentShape(Rectangle())
-                .onTapGesture(perform: onClose)
+            Spacer(minLength: 0)
             content
                 .frame(width: width)
                 .frame(maxHeight: .infinity, alignment: .top)

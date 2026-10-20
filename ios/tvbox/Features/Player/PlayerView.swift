@@ -59,10 +59,26 @@ struct PlayerView: View {
     /// 双击快退快进的提示
     @State private var skipFeedback: PlayerTapZone?
     @FocusState private var isFocused: Bool
+    #if os(macOS)
+    /// 控制条上弹出的倍速、字幕音轨菜单
+    @State private var macMenu: MacPlayerMenu?
+    /// 鼠标停在控制条上时不自动隐藏
+    @State private var isHoveringControls = false
+    /// 鼠标悬停在进度条上的位置 (0...1)
+    @State private var hoverFraction: Double?
+    /// 单击画面播放/暂停后中间闪一下的图标，true 表示开始播放
+    @State private var playFeedback: Bool?
+    @State private var isFullScreen = false
+    #endif
 
     /// 横滑一个屏幕宽度调整的时长 (秒)，和 Android 一样
     private static let panSeekRange: Double = 120
     private static let skipSeconds: Double = 10
+    #if os(macOS)
+    private static let hideControlsDelay: UInt64 = 3_000_000_000
+    #else
+    private static let hideControlsDelay: UInt64 = 5_000_000_000
+    #endif
 
     /// 锁屏只在触屏设备上有意义
     private static let supportsLock: Bool = {
@@ -117,11 +133,35 @@ struct PlayerView: View {
                 }
 
                 if let panel {
+                    // 遮罩原地淡入，只有面板从右侧滑入
+                    Color.black.opacity(0.25)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture(perform: closePanel)
+                        .transition(.opacity)
                     panelView(panel, width: min(360, geometry.size.width * 0.85))
                         .transition(.move(edge: .trailing))
                 }
             }
         }
+        #if os(macOS)
+        // 鼠标移动时显示控制层，静止一会儿后隐藏
+        .onContinuousHover { phase in
+            guard case .active = phase, panel == nil else { return }
+            if !showControls {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showControls = true
+                }
+            }
+            scheduleHideControls()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
+            isFullScreen = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
+            isFullScreen = false
+        }
+        #endif
         .tvboxStatusBar(hidden: true)
         .toast(message: viewModel.toastMessage, isShowing: $viewModel.showToast)
         .focusable()
@@ -139,6 +179,9 @@ struct PlayerView: View {
                 onProgress: onProgress
             )
             isFocused = true
+            #if os(macOS)
+            isFullScreen = NSApp.keyWindow?.styleMask.contains(.fullScreen) ?? false
+            #endif
             scheduleHideControls()
         }
         .onDisappear {
@@ -178,12 +221,19 @@ struct PlayerView: View {
             VStack(spacing: 0) {
                 topBar
                 Spacer()
+                #if os(macOS)
+                macBottomBar
+                #else
                 bottomBar
+                #endif
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
 
+            // Mac 上单击画面就是播放/暂停，不需要中间的大按钮
+            #if !os(macOS)
             centerControls
+            #endif
         }
         .transition(.opacity)
     }
@@ -207,8 +257,16 @@ struct PlayerView: View {
 
             statusInfo
 
+            // Mac 的播放设置在底部控制条的齿轮里
+            #if !os(macOS)
             iconButton("ellipsis", size: 20) { openPanel(.settings) }
+            #endif
         }
+        #if os(macOS)
+        // 窗口左上角的红绿灯盖在画面上，全屏时才没有
+        .padding(.leading, isFullScreen ? 0 : 64)
+        .onHover { isHoveringControls = $0 }
+        #endif
     }
 
     /// 分辨率、网速、时间，对应 Android 右上角的屏显
@@ -285,14 +343,22 @@ struct PlayerView: View {
             let width = geometry.size.width
             let duration = viewModel.duration
             let fraction = duration > 0 ? min(max((seekPreview ?? viewModel.currentTime) / duration, 0), 1) : 0
+            #if os(macOS)
+            // 鼠标悬停时进度条变粗、显示圆点
+            let isActive = hoverFraction != nil || seekPreview != nil
+            let trackHeight: CGFloat = isActive ? 6 : 4
+            #else
+            let isActive = true
+            let trackHeight: CGFloat = 4
+            #endif
 
             ZStack(alignment: .leading) {
                 Capsule()
                     .fill(Color.white.opacity(0.25))
-                    .frame(height: 4)
+                    .frame(height: trackHeight)
                 Capsule()
                     .fill(Color.orange)
-                    .frame(width: width * fraction, height: 4)
+                    .frame(width: width * fraction, height: trackHeight)
                 ForEach(skipMarkers, id: \.self) { marker in
                     RoundedRectangle(cornerRadius: 1)
                         .fill(Color.yellow)
@@ -303,9 +369,27 @@ struct PlayerView: View {
                     .fill(Color.white)
                     .frame(width: 14, height: 14)
                     .shadow(color: .black.opacity(0.4), radius: 2)
+                    .scaleEffect(isActive ? 1 : 0.01)
                     .offset(x: width * fraction - 7)
             }
             .frame(maxHeight: .infinity)
+            .animation(.easeOut(duration: 0.12), value: isActive)
+            #if os(macOS)
+            .overlay(alignment: .topLeading) {
+                if let hoverFraction, duration > 0, seekPreview == nil {
+                    hoverTimeTip(fraction: hoverFraction, duration: duration)
+                        .position(x: min(max(width * hoverFraction, 36), width - 36), y: -10)
+                }
+            }
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(let location):
+                    hoverFraction = width > 0 ? min(max(location.x / width, 0), 1) : nil
+                case .ended:
+                    hoverFraction = nil
+                }
+            }
+            #endif
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
@@ -366,6 +450,17 @@ struct PlayerView: View {
             if let seekPreview {
                 seekHUD(target: seekPreview)
             }
+
+            #if os(macOS)
+            if let playFeedback {
+                Image(systemName: playFeedback ? "play.fill" : "pause.fill")
+                    .font(.system(size: 30))
+                    .foregroundColor(.white)
+                    .frame(width: 72, height: 72)
+                    .background(Circle().fill(Color.black.opacity(0.45)))
+                    .transition(.opacity.combined(with: .scale(scale: 1.25)))
+            }
+            #endif
 
             if let level {
                 HStack {
@@ -540,7 +635,7 @@ struct PlayerView: View {
 
     @ViewBuilder
     private func panelView(_ panel: PlayerPanel, width: CGFloat) -> some View {
-        PlayerSidePanel(width: width, onClose: closePanel) {
+        PlayerSidePanel(width: width) {
             switch panel {
             case .settings:
                 PlayerSettingsPanel(viewModel: viewModel)
@@ -554,6 +649,11 @@ struct PlayerView: View {
 
     private func openPanel(_ panel: PlayerPanel) {
         hideControlsTask?.cancel()
+        #if os(macOS)
+        macMenu = nil
+        // 控制条随面板消失，收不到鼠标移出
+        isHoveringControls = false
+        #endif
         withAnimation(.easeOut(duration: 0.2)) {
             self.panel = panel
         }
@@ -606,13 +706,27 @@ struct PlayerView: View {
     // MARK: - 手势和键盘
 
     private func handleTap() {
+        #if os(macOS)
+        // Mac 单击画面播放/暂停，控制层跟着鼠标显示隐藏；菜单打开时先关菜单
+        if macMenu != nil {
+            macMenu = nil
+            return
+        }
+        viewModel.togglePlayPause()
+        showPlayFeedback()
+        #else
         withAnimation(.easeInOut(duration: 0.2)) {
             showControls.toggle()
         }
         scheduleHideControls()
+        #endif
     }
 
     private func handleDoubleTap(_ zone: PlayerTapZone) {
+        #if os(macOS)
+        // Mac 双击画面切换全屏，和系统播放器一样
+        toggleFullScreen()
+        #else
         switch zone {
         case .left: viewModel.skip(by: -Self.skipSeconds)
         case .right: viewModel.skip(by: Self.skipSeconds)
@@ -630,6 +744,7 @@ struct PlayerView: View {
                 }
             }
         }
+        #endif
     }
 
     private func handlePan(_ pan: PlayerPan) {
@@ -654,6 +769,12 @@ struct PlayerView: View {
     }
 
     private func handleKeyPress(_ press: KeyPress) -> KeyPress.Result {
+        #if os(macOS)
+        if press.key == .escape {
+            handleEscape()
+            return .handled
+        }
+        #endif
         guard panel == nil else { return .ignored }
         switch press.key {
         case .space:
@@ -667,7 +788,18 @@ struct PlayerView: View {
         case .downArrow:
             viewModel.adjustVolume(by: -0.1)
         default:
+            #if os(macOS)
+            switch press.characters.lowercased() {
+            case "f": toggleFullScreen()
+            case "m": viewModel.toggleMute()
+            case "n": viewModel.playNext()
+            case "[": viewModel.stepSpeed(by: -1)
+            case "]": viewModel.stepSpeed(by: 1)
+            default: return .ignored
+            }
+            #else
             return .ignored
+            #endif
         }
         return .handled
     }
@@ -675,9 +807,14 @@ struct PlayerView: View {
     private func scheduleHideControls() {
         hideControlsTask?.cancel()
         hideControlsTask = Task {
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            try? await Task.sleep(nanoseconds: Self.hideControlsDelay)
             if !Task.isCancelled {
                 await MainActor.run {
+                    #if os(macOS)
+                    // 鼠标停在控制条上、菜单或面板打开时不隐藏
+                    guard !isHoveringControls, macMenu == nil, panel == nil else { return }
+                    NSCursor.setHiddenUntilMouseMoves(true)
+                    #endif
                     withAnimation(.easeInOut(duration: 0.2)) {
                         showControls = false
                     }
@@ -707,3 +844,306 @@ struct PlayerView: View {
         return "\(bytesPerSecond / 1024) KB/s"
     }
 }
+
+// MARK: - macOS 控制条
+
+#if os(macOS)
+/// 控制条上弹出的菜单
+private enum MacPlayerMenu {
+    case speed, tracks
+}
+
+extension PlayerView {
+    /// Mac 的底部控制条：所有按钮放在一行，倍速和字幕音轨用就近弹出的菜单
+    private var macBottomBar: some View {
+        VStack(spacing: 2) {
+            progressBar
+
+            HStack(spacing: 2) {
+                macIconButton(viewModel.isPlaying ? "pause.fill" : "play.fill", size: 17, help: viewModel.isPlaying ? "暂停 (空格)" : "播放 (空格)") {
+                    viewModel.togglePlayPause()
+                }
+                macIconButton("forward.end.fill", help: "下一集 (N)", action: viewModel.playNext)
+                macIconButton(volumeIcon, help: viewModel.isMuted ? "取消静音 (M)" : "静音 (M)", action: viewModel.toggleMute)
+                Slider(
+                    value: Binding(
+                        get: { Double(viewModel.isMuted ? 0 : viewModel.volume) },
+                        set: { viewModel.setVolume(Float($0)) }
+                    ),
+                    in: 0...1
+                )
+                .controlSize(.mini)
+                .tint(.white)
+                .frame(width: 72)
+
+                HStack(spacing: 0) {
+                    Text(PlayerViewModel.formatTime(seekPreview ?? viewModel.currentTime))
+                        .foregroundColor(.white)
+                    Text(" / " + PlayerViewModel.formatTime(viewModel.duration))
+                        .foregroundColor(.white.opacity(0.6))
+                }
+                .font(.footnote)
+                .monospacedDigit()
+                .padding(.leading, 10)
+
+                Spacer()
+
+                let speedChanged = viewModel.config.speed != 1
+                macTextButton(speedChanged ? formatSpeed(viewModel.config.speed) : "倍速", highlighted: speedChanged, help: "倍速 ([ ])") {
+                    toggleMacMenu(.speed)
+                }
+                .overlay(alignment: .bottom) {
+                    if macMenu == .speed {
+                        speedMenu.offset(y: -44)
+                    }
+                }
+                if !viewModel.episodes.isEmpty {
+                    macTextButton("选集", help: "选集") { openPanel(.episodes) }
+                }
+                if !viewModel.subtitleTracks.isEmpty || viewModel.audioTracks.count > 1 {
+                    macIconButton("captions.bubble", help: "字幕与音轨") { toggleMacMenu(.tracks) }
+                        .overlay(alignment: .bottomTrailing) {
+                            if macMenu == .tracks {
+                                tracksMenu.offset(y: -44)
+                            }
+                        }
+                }
+                macIconButton("gearshape", help: "播放设置") { openPanel(.settings) }
+                macIconButton(
+                    isFullScreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                    help: isFullScreen ? "退出全屏 (F)" : "全屏 (F)",
+                    action: toggleFullScreen
+                )
+            }
+        }
+        .onHover { isHoveringControls = $0 }
+    }
+
+    private var volumeIcon: String {
+        let volume = viewModel.isMuted ? 0 : viewModel.volume
+        switch volume {
+        case 0: return "speaker.slash.fill"
+        case ..<0.34: return "speaker.wave.1.fill"
+        case ..<0.67: return "speaker.wave.2.fill"
+        default: return "speaker.wave.3.fill"
+        }
+    }
+
+    private var speedMenu: some View {
+        macMenuPanel(width: 150) {
+            macMenuHeader("倍速")
+            ForEach(PlayerViewModel.speedOptions.reversed(), id: \.self) { speed in
+                macMenuRow(formatSpeed(speed), isSelected: viewModel.config.speed == speed) {
+                    viewModel.setSpeed(speed)
+                    closeMacMenu()
+                }
+            }
+        }
+    }
+
+    private var tracksMenu: some View {
+        macMenuPanel(width: 220) {
+            if !viewModel.subtitleTracks.isEmpty {
+                macMenuHeader("字幕")
+                macMenuRow("关", isSelected: viewModel.selectedSubtitleID == nil) {
+                    viewModel.selectSubtitle(id: nil)
+                    closeMacMenu()
+                }
+                ForEach(viewModel.subtitleTracks) { track in
+                    macMenuRow(track.name, isSelected: viewModel.selectedSubtitleID == track.id) {
+                        viewModel.selectSubtitle(id: track.id)
+                        closeMacMenu()
+                    }
+                }
+            }
+            if viewModel.audioTracks.count > 1 {
+                if !viewModel.subtitleTracks.isEmpty {
+                    Divider()
+                        .overlay(Color.white.opacity(0.1))
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 4)
+                }
+                macMenuHeader("音轨")
+                ForEach(viewModel.audioTracks) { track in
+                    macMenuRow(track.name, isSelected: viewModel.selectedAudioTrackID == track.id) {
+                        viewModel.selectAudioTrack(id: track.id)
+                        closeMacMenu()
+                    }
+                }
+            }
+        }
+    }
+
+    /// 进度条悬停时显示的时间，靠近片头片尾标记时一并提示
+    private func hoverTimeTip(fraction: Double, duration: Double) -> some View {
+        let opening = viewModel.config.openingTime
+        let ending = viewModel.config.endingTime
+        let marker: String?
+        if opening > 0, abs(fraction - opening / duration) < 0.01 {
+            marker = "片头"
+        } else if ending > 0, abs(fraction - (1 - ending / duration)) < 0.01 {
+            marker = "片尾"
+        } else {
+            marker = nil
+        }
+        return HStack(spacing: 4) {
+            Text(PlayerViewModel.formatTime(fraction * duration))
+                .foregroundColor(.white)
+            if let marker {
+                Text(marker)
+                    .foregroundColor(.yellow)
+            }
+        }
+        .font(.caption)
+        .monospacedDigit()
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(RoundedRectangle(cornerRadius: 6).fill(Color.black.opacity(0.75)))
+        .fixedSize()
+        .allowsHitTesting(false)
+    }
+
+    // MARK: 菜单
+
+    private func toggleMacMenu(_ menu: MacPlayerMenu) {
+        hideControlsTask?.cancel()
+        withAnimation(.easeOut(duration: 0.15)) {
+            macMenu = macMenu == menu ? nil : menu
+        }
+        if macMenu == nil {
+            scheduleHideControls()
+        }
+    }
+
+    private func closeMacMenu() {
+        withAnimation(.easeOut(duration: 0.15)) {
+            macMenu = nil
+        }
+        scheduleHideControls()
+    }
+
+    private func macMenuPanel<Content: View>(width: CGFloat, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            content()
+        }
+        .padding(6)
+        .frame(width: width)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.1)))
+        .shadow(color: .black.opacity(0.4), radius: 16, y: 6)
+        .environment(\.colorScheme, .dark)
+        .fixedSize(horizontal: false, vertical: true)
+        .transition(.opacity)
+    }
+
+    private func macMenuHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.caption)
+            .foregroundColor(.white.opacity(0.5))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+    }
+
+    private func macMenuRow(_ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Text(title)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                if isSelected {
+                    Image(systemName: "checkmark")
+                }
+            }
+            .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+            .foregroundColor(isSelected ? .orange : .white.opacity(0.85))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PlayerHoverButtonStyle())
+    }
+
+    // MARK: 按钮
+
+    private func macIconButton(_ systemName: String, size: CGFloat = 15, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: size, weight: .medium))
+                .foregroundColor(.white)
+                .frame(width: 32, height: 32)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PlayerHoverButtonStyle())
+        .help(help)
+    }
+
+    private func macTextButton(_ title: String, highlighted: Bool = false, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 13))
+                .monospacedDigit()
+                .foregroundColor(highlighted ? .orange : .white)
+                .padding(.horizontal, 10)
+                .frame(height: 32)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PlayerHoverButtonStyle())
+        .help(help)
+    }
+
+    // MARK: 操作
+
+    private func showPlayFeedback() {
+        let playing = viewModel.isPlaying
+        withAnimation(.easeOut(duration: 0.15)) {
+            playFeedback = playing
+        }
+        Task {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            if playFeedback == playing {
+                withAnimation(.easeOut(duration: 0.25)) {
+                    playFeedback = nil
+                }
+            }
+        }
+    }
+
+    private func toggleFullScreen() {
+        NSApp.keyWindow?.toggleFullScreen(nil)
+    }
+
+    /// Esc 依次关闭菜单、面板，退出全屏，最后返回
+    private func handleEscape() {
+        if macMenu != nil {
+            closeMacMenu()
+        } else if panel != nil {
+            closePanel()
+        } else if isFullScreen {
+            toggleFullScreen()
+        } else {
+            dismiss()
+        }
+    }
+}
+
+/// 鼠标悬停时显示浅色底，按下时更深
+private struct PlayerHoverButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HoverLabel(configuration: configuration)
+    }
+
+    private struct HoverLabel: View {
+        let configuration: ButtonStyleConfiguration
+        @State private var isHovering = false
+
+        var body: some View {
+            configuration.label
+                .background(
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(Color.white.opacity(configuration.isPressed ? 0.22 : isHovering ? 0.14 : 0))
+                )
+                .onHover { isHovering = $0 }
+        }
+    }
+}
+#endif
