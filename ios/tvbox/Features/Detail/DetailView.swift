@@ -201,7 +201,7 @@ struct DetailView: View {
                 )
             }
         }
-        .onAppear {
+        .tvboxOnDidAppear {
             if let resume, !didAutoPlay, resume.playableSite != nil, let episodes = resume.episodes {
                 didAutoPlay = true
                 playRequest = PlayRequest(
@@ -210,6 +210,8 @@ struct DetailView: View {
                     history: resume
                 )
             }
+        }
+        .onAppear {
             if let tmdb {
                 viewModel.loadTMDB(tmdb, title: movie.vodName, candidates: candidates)
             } else {

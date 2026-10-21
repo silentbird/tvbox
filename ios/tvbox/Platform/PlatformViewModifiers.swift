@@ -23,6 +23,16 @@ extension View {
         #endif
     }
 
+    /// 页面真正显示出来后回调。iOS 的 onAppear 在推入转场结束前就触发，这时弹出全屏页会挂到别的控制器上，之后关不掉
+    @ViewBuilder
+    func tvboxOnDidAppear(perform action: @escaping () -> Void) -> some View {
+        #if os(iOS)
+        self.background(DidAppearHook(action: action))
+        #else
+        self.onAppear(perform: action)
+        #endif
+    }
+
     @ViewBuilder
     func tvboxStackNavigationViewStyle() -> some View {
         #if os(iOS) && !targetEnvironment(macCatalyst)
@@ -125,6 +135,39 @@ extension View {
         #endif
     }
 }
+
+#if os(iOS)
+/// 借 UIKit 的 viewDidAppear 判断转场结束
+private struct DidAppearHook: UIViewControllerRepresentable {
+    let action: () -> Void
+
+    func makeUIViewController(context: Context) -> Controller {
+        Controller(action: action)
+    }
+
+    func updateUIViewController(_ controller: Controller, context: Context) {
+        controller.action = action
+    }
+
+    final class Controller: UIViewController {
+        var action: () -> Void
+
+        init(action: @escaping () -> Void) {
+            self.action = action
+            super.init(nibName: nil, bundle: nil)
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            action()
+        }
+    }
+}
+#endif
 
 extension ToolbarItemPlacement {
     static var tvboxNavigationBarLeading: ToolbarItemPlacement {
