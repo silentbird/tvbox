@@ -160,7 +160,8 @@ actor TMDBService {
         guard TMDBSettings.isConfigured else { return nil }
         let key = "tmdb|\(type.rawValue):\(id)|\(type == .tv ? season : 0)"
         let cached = readCache(key: key)
-        if let cached, cached.metadata != nil, Date().timeIntervalSince(cached.date) < Self.matchedTTL {
+        // 之前缓存的资料没有海报，重新取一次
+        if let cached, cached.metadata?.posterPath != nil, Date().timeIntervalSince(cached.date) < Self.matchedTTL {
             return cached.metadata
         }
         do {
@@ -357,6 +358,7 @@ actor TMDBService {
             originalTitle: detail.originalName,
             overview: detail.overview.flatMap { $0.isEmpty ? nil : $0 },
             backdropPath: detail.backdropPath,
+            posterPath: detail.posterPath,
             logoPath: Self.pickLogo(detail.images?.logos, originalLanguage: detail.originalLanguage),
             rating: detail.voteAverage.flatMap { $0 > 0 ? $0 : nil },
             certification: Self.pickCertification(ratings),
@@ -418,6 +420,7 @@ actor TMDBService {
             originalTitle: detail.originalTitle,
             overview: detail.overview.flatMap { $0.isEmpty ? nil : $0 },
             backdropPath: detail.backdropPath,
+            posterPath: detail.posterPath,
             logoPath: Self.pickLogo(detail.images?.logos, originalLanguage: detail.originalLanguage),
             rating: detail.voteAverage.flatMap { $0 > 0 ? $0 : nil },
             certification: Self.pickCertification(ratings),
@@ -584,6 +587,7 @@ private struct TVDetail: Decodable {
     let originalName: String?
     let overview: String?
     let backdropPath: String?
+    let posterPath: String?
     let voteAverage: Double?
     let genres: [Genre]?
     let firstAirDate: String?
@@ -655,6 +659,7 @@ private struct MovieDetail: Decodable {
     let originalTitle: String?
     let overview: String?
     let backdropPath: String?
+    let posterPath: String?
     let voteAverage: Double?
     let genres: [Genre]?
     let releaseDate: String?

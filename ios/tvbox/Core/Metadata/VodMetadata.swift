@@ -12,6 +12,8 @@ struct VodMetadata: Codable, Sendable {
     let originalTitle: String?
     let overview: String?
     let backdropPath: String?
+    /// 竖版海报，收藏卡片用。之前缓存的资料没有
+    var posterPath: String? = nil
     let logoPath: String?
     let rating: Double?
     let certification: String?
