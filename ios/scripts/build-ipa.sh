@@ -44,5 +44,5 @@ if [ "${1:-}" = "--release" ]; then
         --prerelease \
         --target "$(git -C "$IOS_DIR" rev-parse HEAD)" \
         --title "iOS $VERSION ($STAMP)" \
-        --notes "未签名的测试包，提交 $COMMIT。下载后用自签工具签名安装。"
+        --notes "未签名的测试包，提交 ${COMMIT}。下载后用自签工具签名安装。"
 fi
