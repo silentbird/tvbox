@@ -3,8 +3,6 @@ import SwiftUI
 struct HistoryView: View {
     @StateObject private var viewModel = HistoryViewModel()
     @State private var showClearAlert = false
-    /// 正在直接播放的历史记录
-    @State private var playingItem: StorageManager.VodHistoryItem?
     @Environment(\.tvboxWideLayout) private var isWideLayout
 
     var body: some View {
@@ -43,9 +41,6 @@ struct HistoryView: View {
         .onAppear {
             viewModel.loadHistory()
         }
-        .tvboxFullScreenCover(item: $playingItem) { item in
-            player(for: item)
-        }
     }
     
     private var historyList: some View {
@@ -53,7 +48,7 @@ struct HistoryView: View {
             ForEach(groupedHistory, id: \.key) { dateString, items in
                 Section(header: Text(dateString)) {
                     ForEach(items) { item in
-                        historyEntry(for: item) {
+                        NavigationLink(destination: destination(for: item)) {
                             HistoryRow(item: item)
                         }
                         .swipeActions(edge: .trailing) {
@@ -77,7 +72,7 @@ struct HistoryView: View {
                 ForEach(groupedHistory, id: \.key) { dateString, items in
                     Section {
                         ForEach(items) { item in
-                            historyEntry(for: item) {
+                            NavigationLink(destination: destination(for: item)) {
                                 HistoryRow(item: item)
                                     .padding(10)
                                     .background(Color.tvboxSystemBackground)
@@ -105,44 +100,7 @@ struct HistoryView: View {
         .background(Color.tvboxSystemGroupedBackground)
     }
 
-    /// 存了剧集的记录点击直接播放；旧记录没有剧集，进详情页接着播
-    @ViewBuilder
-    private func historyEntry<RowContent: View>(
-        for item: StorageManager.VodHistoryItem,
-        @ViewBuilder row: () -> RowContent
-    ) -> some View {
-        if viewModel.playableSite(for: item) != nil {
-            Button(action: { playingItem = item }) {
-                row()
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        } else {
-            NavigationLink(destination: destination(for: item)) {
-                row()
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func player(for item: StorageManager.VodHistoryItem) -> some View {
-        if let site = viewModel.playableSite(for: item), let flag = item.playFlag, let episodes = item.episodes {
-            // 历史只存了上次播放的线路
-            PlayerView(
-                title: item.vodName,
-                sources: [PlaySource(flag: flag, episodes: episodes)],
-                sourceIndex: 0,
-                episodeIndex: episodes.indices.contains(item.episodeIndex) ? item.episodeIndex : 0,
-                startPosition: item.progress,
-                configKey: item.id,
-                resolvePlayUrl: { flag, episode in try await resolvePlayAddress(site: site, flag: flag, episode: episode) },
-                onProgress: { _, episodeIndex, position, duration in
-                    viewModel.recordProgress(item, episodeIndex: episodeIndex, progress: position, duration: duration)
-                }
-            )
-        }
-    }
-
+    /// 先进详情页再自动接着播，关掉播放器回到详情页。
     /// 在 TMDB 详情页看的回到 TMDB 详情页；其它和 Android 一样：站点还在就进详情并接着播放，否则按片名搜索（开启 TMDB 时先搜 TMDB）
     @ViewBuilder
     private func destination(for item: StorageManager.VodHistoryItem) -> some View {
@@ -275,29 +233,6 @@ class HistoryViewModel: ObservableObject {
         historyItems = storageManager.getVodHistory()
     }
     
-    /// 可以直接播放时返回所属站点；旧记录没存剧集或站点已不在时返回 nil
-    func playableSite(for item: StorageManager.VodHistoryItem) -> SiteBean? {
-        guard item.playFlag != nil, item.episodes?.isEmpty == false else { return nil }
-        return ApiConfig.shared.sites.first { $0.key == item.siteKey }
-    }
-
-    /// 从历史直接播放时记录进度，和详情页一样同时更新历史和该集的进度
-    func recordProgress(_ item: StorageManager.VodHistoryItem, episodeIndex: Int, progress: Double, duration: Double) {
-        storageManager.updateHistory(item, episodeIndex: episodeIndex, progress: progress, duration: duration)
-        if let flag = item.playFlag, let episodes = item.episodes, episodes.indices.contains(episodeIndex) {
-            storageManager.savePlayProgress(StorageManager.PlayProgressItem(
-                vodId: item.vodId,
-                siteKey: item.siteKey,
-                flag: flag,
-                episodeIndex: episodeIndex,
-                episodeName: episodes[episodeIndex].name,
-                progress: progress,
-                duration: duration
-            ))
-        }
-        loadHistory()
-    }
-
     func removeHistory(_ item: StorageManager.VodHistoryItem) {
         storageManager.removeVodHistory(vodId: item.vodId, siteKey: item.siteKey)
         loadHistory()
