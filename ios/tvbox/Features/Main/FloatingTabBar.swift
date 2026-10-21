@@ -11,7 +11,7 @@ struct FloatingTabBar: View {
     ]
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 0) {
             ForEach(tabs.indices, id: \.self) { index in
                 Button {
                     withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
@@ -31,11 +31,12 @@ struct FloatingTabBar: View {
         .background {
             floatingGlassBackground
         }
+        // 描边用跟随深浅色的细线，浅色背景上也看得出边界
         .overlay {
             Capsule()
-                .strokeBorder(Color.white.opacity(0.22), lineWidth: 1)
+                .strokeBorder(Color.tvboxHairline, lineWidth: 1)
         }
-        .shadow(color: Color.black.opacity(0.20), radius: 22, x: 0, y: 12)
+        .shadow(color: Color.black.opacity(0.18), radius: 18, x: 0, y: 10)
         .accessibilityElement(children: .contain)
     }
 
@@ -43,15 +44,11 @@ struct FloatingTabBar: View {
     private var floatingGlassBackground: some View {
         if #available(iOS 26.0, macOS 26.0, *) {
             Capsule()
-                .fill(Color.white.opacity(0.10))
-                .glassEffect(.regular.tint(Color.white.opacity(0.12)).interactive(), in: Capsule())
+                .fill(Color.tvboxSurface.opacity(0.55))
+                .glassEffect(.regular.interactive(), in: Capsule())
         } else {
             Capsule()
-                .fill(.ultraThinMaterial)
-                .background {
-                    Capsule()
-                        .fill(Color.white.opacity(0.12))
-                }
+                .fill(.regularMaterial)
         }
     }
 }
@@ -61,26 +58,22 @@ private struct FloatingTabButton: View {
     let isSelected: Bool
 
     var body: some View {
-        HStack(spacing: 6) {
+        VStack(spacing: 2) {
             Image(systemName: item.systemImage)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 18, weight: isSelected ? .semibold : .regular))
+                .frame(height: 22)
 
             Text(item.title)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 10.5, weight: isSelected ? .bold : .medium))
                 .lineLimit(1)
         }
-        .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
         .frame(maxWidth: .infinity)
-        .frame(height: 38)
-        .padding(.horizontal, 8)
+        .frame(height: 50)
         .background {
             if isSelected {
                 Capsule()
-                    .fill(Color.white.opacity(0.20))
-                    .overlay {
-                        Capsule()
-                            .strokeBorder(Color.white.opacity(0.26), lineWidth: 1)
-                    }
+                    .fill(Color.accentColor.opacity(0.14))
             }
         }
         .contentShape(Capsule())

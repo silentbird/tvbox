@@ -24,7 +24,7 @@ struct TMDBSearchView: View {
             // 原生 macOS 的 ScrollView 会按内容收窄
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Color.tvboxSystemGroupedBackground)
+        .background(Color.tvboxBackground)
         .navigationTitle(keyword)
         .tvboxInlineNavigationBarTitle()
         .onAppear {
@@ -68,7 +68,7 @@ struct TMDBSearchView: View {
             if isSelected {
                 label
                     .foregroundColor(.white)
-                    .background(Color.blue, in: Capsule())
+                    .background(Color.accentColor, in: Capsule())
             } else {
                 label
                     .foregroundColor(.primary)

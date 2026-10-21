@@ -451,7 +451,7 @@ struct DetailView: View {
                 .foregroundColor(.black)
                 .frame(maxWidth: .infinity)
                 .frame(height: 40)
-                .background(Color.white.opacity(0.92), in: Capsule())
+                .background(Color.tvboxAccentOnDark, in: Capsule())
                 .contentShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -981,7 +981,7 @@ struct DetailView: View {
                                 .foregroundColor(.black)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 1)
-                                .background(Color.white, in: RoundedRectangle(cornerRadius: 4))
+                                .background(Color.tvboxAccentOnDark, in: RoundedRectangle(cornerRadius: 4))
                                 .padding(8)
                         }
                     }
@@ -1000,7 +1000,7 @@ struct DetailView: View {
                                 GeometryReader { geometry in
                                     ZStack(alignment: .leading) {
                                         Capsule().fill(Color.white.opacity(0.3))
-                                        Capsule().fill(Color(red: 0.91, green: 0.73, blue: 0.29))
+                                        Capsule().fill(Color.tvboxAccentOnDark)
                                             .frame(width: max(4, geometry.size.width * fraction))
                                     }
                                 }
@@ -1014,7 +1014,7 @@ struct DetailView: View {
                     .overlay {
                         if isPlayIndex {
                             RoundedRectangle(cornerRadius: 10)
-                                .strokeBorder(Color.white, lineWidth: 2.5)
+                                .strokeBorder(Color.tvboxAccentOnDark, lineWidth: 2.5)
                         }
                     }
 

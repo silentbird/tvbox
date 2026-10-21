@@ -35,9 +35,8 @@ struct SearchView: View {
                 }
             }
         }
-        .background(Color.tvboxSystemGroupedBackground)
+        .background(Color.tvboxBackground)
         .navigationTitle("搜索")
-        .tvboxInlineNavigationBarTitle()
         // 开启 TMDB 时先搜 TMDB，站点资源在后台查找；否则用快速搜索搜所有站点
         .navigationDestination(item: $searchKeyword) { keyword in
             if TMDBSettings.isConfigured {
@@ -72,11 +71,11 @@ struct SearchView: View {
     // MARK: - Search Bar
     private var searchBar: some View {
         HStack(spacing: 12) {
-            HStack {
+            HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.secondary)
                 
-                TextField("搜索影视", text: $viewModel.searchText)
+                TextField("搜索片名", text: $viewModel.searchText)
                     .focused($isSearchFocused)
                     .submitLabel(.search)
                     .onSubmit {
@@ -88,93 +87,116 @@ struct SearchView: View {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundColor(.secondary)
                     }
+                    .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(Color.tvboxSystemGray6)
-            .cornerRadius(10)
+            .font(.system(size: 15))
+            .padding(.horizontal, 14)
+            .frame(height: 46)
+            .background(Color.tvboxSurface, in: RoundedRectangle(cornerRadius: 14))
+            // 聚焦时描边换成强调色
+            .overlay {
+                RoundedRectangle(cornerRadius: 14)
+                    .strokeBorder(isSearchFocused ? Color.accentColor : Color.tvboxHairline, lineWidth: isSearchFocused ? 1.5 : 1)
+            }
             
             if isSearchFocused {
                 Button("取消") {
                     isSearchFocused = false
                     viewModel.searchText = ""
                 }
-                .foregroundColor(.blue)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.accentColor)
+                .buttonStyle(.plain)
             }
         }
-        .padding()
-        .background(Color.tvboxSystemBackground)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
     }
     
     // MARK: - History Section
     private var historySection: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 24) {
                 // 搜索历史
                 if !viewModel.searchHistory.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
-                            Text("搜索历史")
-                                .font(.headline)
+                            sectionTitle("搜索历史")
                             
                             Spacer()
                             
                             Button("清空") {
                                 viewModel.clearHistory()
                             }
-                            .font(.subheadline)
+                            .font(.footnote)
                             .foregroundColor(.secondary)
+                            .buttonStyle(.plain)
                         }
                         
                         FlowLayout(spacing: 8) {
                             ForEach(viewModel.searchHistory, id: \.self) { keyword in
                                 Button(action: { search(keyword) }) {
                                     Text(keyword)
-                                        .font(.subheadline)
+                                        .font(.system(size: 13.5))
                                         .foregroundColor(.primary)
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 8)
-                                        .background(Color.tvboxSystemGray5)
-                                        .cornerRadius(16)
+                                        .padding(.horizontal, 13)
+                                        .padding(.vertical, 7)
+                                        .background(Color.tvboxSurface, in: Capsule())
+                                        .overlay(Capsule().strokeBorder(Color.tvboxHairline, lineWidth: 1))
                                 }
                                 .buttonStyle(.plain)
                             }
                         }
                     }
-                    .padding()
-                    .background(Color.tvboxSystemBackground)
-                    .cornerRadius(12)
                 }
                 
-                // 热门搜索
+                // 热门搜索，按顺序编号，前三名用强调色
                 if !viewModel.hotKeywords.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("热门搜索")
-                            .font(.headline)
+                    VStack(alignment: .leading, spacing: 4) {
+                        sectionTitle("热门搜索")
                         
-                        FlowLayout(spacing: 8) {
-                            ForEach(viewModel.hotKeywords, id: \.self) { keyword in
+                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 0) {
+                            ForEach(Array(viewModel.hotKeywords.enumerated()), id: \.offset) { index, keyword in
                                 Button(action: { search(keyword) }) {
-                                    Text(keyword)
-                                        .font(.subheadline)
-                                        .foregroundColor(.primary)
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 8)
-                                        .background(Color.tvboxSystemGray5)
-                                        .cornerRadius(16)
+                                    HStack(spacing: 10) {
+                                        Text("\(index + 1)")
+                                            .font(.system(size: 15, weight: .heavy))
+                                            .monospacedDigit()
+                                            .foregroundColor(index < 3 ? .accentColor : .secondary)
+                                            .lineLimit(1)
+                                            .fixedSize()
+                                            .frame(width: 24, alignment: .leading)
+                                        
+                                        Text(keyword)
+                                            .font(.system(size: 14.5))
+                                            .foregroundColor(.primary)
+                                            .lineLimit(1)
+                                        
+                                        Spacer(minLength: 0)
+                                    }
+                                    .padding(.vertical, 11)
+                                    .overlay(alignment: .bottom) {
+                                        Rectangle()
+                                            .fill(Color.tvboxHairline)
+                                            .frame(height: 1)
+                                    }
+                                    .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
                             }
                         }
                     }
-                    .padding()
-                    .background(Color.tvboxSystemBackground)
-                    .cornerRadius(12)
                 }
             }
-            .padding()
+            .padding(.horizontal, 18)
+            .padding(.vertical, 8)
         }
+    }
+
+    private func sectionTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 18, weight: .bold))
     }
 }
 

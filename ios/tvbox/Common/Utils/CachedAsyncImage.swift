@@ -91,7 +91,7 @@ extension CachedAsyncImage where Placeholder == LinearGradient {
     init(urlString: String?, contentMode: ContentMode = .fill) {
         self.init(urlString: urlString, contentMode: contentMode) {
             LinearGradient(
-                colors: [Color.blue.opacity(0.3), Color.purple.opacity(0.3)],
+                colors: [Color.tvboxSurfaceSecondary, Color.tvboxSurfaceSecondary.opacity(0.6)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )

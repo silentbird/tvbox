@@ -6,13 +6,8 @@ struct DoubanCategoryRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Image(systemName: category.icon)
-                    .font(.title3)
-                    .foregroundColor(.orange)
-
                 Text(category.name)
-                    .font(.title3)
-                    .fontWeight(.bold)
+                    .font(.system(size: 18, weight: .bold))
 
                 Spacer()
 
@@ -21,7 +16,7 @@ struct DoubanCategoryRow: View {
                         .scaleEffect(0.8)
                 }
             }
-            .padding(.horizontal)
+            .padding(.horizontal, 18)
 
             if category.movies.isEmpty && !category.isLoading {
                 HStack {
@@ -34,62 +29,18 @@ struct DoubanCategoryRow: View {
                 .frame(height: 100)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
+                    HStack(alignment: .top, spacing: 12) {
                         ForEach(category.movies) { movie in
                             NavigationLink(destination: DetailView(movie: movie)) {
-                                DoubanMovieCard(movie: movie)
+                                MovieCard(movie: movie)
+                                    .frame(width: 108)
                             }
                             .buttonStyle(.plain)
                         }
                     }
-                    .padding(.horizontal)
+                    .padding(.horizontal, 18)
                 }
             }
         }
-    }
-}
-
-struct DoubanMovieCard: View {
-    let movie: MovieItem
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ZStack(alignment: .topTrailing) {
-                CachedAsyncImage(urlString: movie.vodPic)
-                    .frame(width: 120, height: 160)
-                    .clipped()
-
-                if let remarks = movie.vodRemarks, !remarks.isEmpty {
-                    Text(remarks)
-                        .font(.caption2)
-                        .fontWeight(.medium)
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(
-                            LinearGradient(
-                                colors: [Color.orange, Color.red],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .cornerRadius(4)
-                        .padding(6)
-                }
-            }
-
-            Text(movie.vodName)
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundColor(.primary)
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
-                .frame(width: 120, height: 36, alignment: .topLeading)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 6)
-        }
-        .background(Color.tvboxSystemBackground)
-        .cornerRadius(10)
-        .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
     }
 }

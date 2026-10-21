@@ -33,7 +33,7 @@ struct FastSearchView: View {
                 }
             }
         }
-        .background(Color.tvboxSystemGroupedBackground)
+        .background(Color.tvboxBackground)
         .navigationTitle(keyword)
         .tvboxInlineNavigationBarTitle()
         .onAppear {
@@ -48,7 +48,7 @@ struct FastSearchView: View {
                 emptyState
                     .frame(maxWidth: .infinity)
             } else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 12)], spacing: 12) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: isWideLayout ? 140 : 100), spacing: 12)], spacing: 16) {
                     ForEach(results) { movie in
                         NavigationLink(destination: DetailView(movie: movie)) {
                             MovieCard(movie: movie, subtitle: selectedSiteKey == nil ? viewModel.siteName(for: movie) : nil)
@@ -115,7 +115,7 @@ struct FastSearchView: View {
                 .frame(maxWidth: isWideLayout ? .infinity : nil, alignment: .leading)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 6)
-                .background(isSelected ? Color.blue : (isWideLayout ? Color.clear : Color.tvboxSystemGray5))
+                .background(isSelected ? Color.accentColor : (isWideLayout ? Color.clear : Color.tvboxSystemGray5))
                 .cornerRadius(8)
                 .contentShape(Rectangle())
         }

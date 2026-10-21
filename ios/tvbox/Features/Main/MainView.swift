@@ -64,7 +64,7 @@ struct MainView: View {
         ZStack(alignment: .bottom) {
             selectedTabContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.tvboxSystemGroupedBackground.ignoresSafeArea())
+                .background(Color.tvboxBackground.ignoresSafeArea())
                 .safeAreaInset(edge: .bottom) {
                     Color.clear.frame(height: 86)
                 }
@@ -177,7 +177,7 @@ extension MainView {
             
             Image(systemName: "tv")
                 .font(.system(size: 100))
-                .foregroundColor(.blue)
+                .foregroundColor(.accentColor)
             
             Text("TVBox")
                 .font(.largeTitle)
@@ -213,9 +213,8 @@ extension MainView {
                         .fontWeight(.semibold)
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(Color.blue)
+                        .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 15))
                         .foregroundColor(.white)
-                        .cornerRadius(12)
                 }
                 .padding(.horizontal, 40)
             }

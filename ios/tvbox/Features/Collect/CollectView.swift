@@ -57,6 +57,7 @@ struct CollectView: View {
             }
             .padding()
         }
+        .background(Color.tvboxBackground)
     }
 
     /// 在 TMDB 详情页收藏的回到 TMDB 详情页；其它和 Android 一样：站点还在就进详情，否则按片名搜索（开启 TMDB 时先搜 TMDB）
@@ -103,7 +104,7 @@ struct CollectItemCard: View {
                     CachedAsyncImage(urlString: posterURL)
                         .id(posterURL)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
 
             Text(metadata?.title ?? item.vodName)
                 .font(.subheadline)

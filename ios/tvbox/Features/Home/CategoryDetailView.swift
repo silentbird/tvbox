@@ -2,15 +2,26 @@ import SwiftUI
 
 struct CategoryDetailView: View {
     let category: MovieCategory
-    @StateObject private var viewModel = CategoryDetailViewModel()
-
-    private let columns = [
-        GridItem(.adaptive(minimum: 140), spacing: 12)
-    ]
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: columns, spacing: 12) {
+            CategoryGrid(category: category)
+                .padding()
+        }
+        .background(Color.tvboxBackground)
+        .navigationTitle(category.name)
+    }
+}
+
+/// 分类的海报网格，翻到底加载下一页。首页窄屏把它直接放在自己的滚动视图里
+struct CategoryGrid: View {
+    let category: MovieCategory
+    @StateObject private var viewModel = CategoryDetailViewModel()
+    @Environment(\.tvboxWideLayout) private var isWideLayout
+
+    var body: some View {
+        VStack(spacing: 0) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: isWideLayout ? 140 : 100), spacing: 12)], alignment: .leading, spacing: 16) {
                 ForEach(viewModel.movies) { movie in
                     NavigationLink(destination: DetailView(movie: movie)) {
                         MovieCard(movie: movie)
@@ -21,7 +32,6 @@ struct CategoryDetailView: View {
                     }
                 }
             }
-            .padding()
 
             if viewModel.isLoading {
                 ProgressView()
@@ -32,7 +42,6 @@ struct CategoryDetailView: View {
                     .padding()
             }
         }
-        .navigationTitle(category.name)
         .onAppear {
             viewModel.loadMovies(categoryId: category.tid)
         }
