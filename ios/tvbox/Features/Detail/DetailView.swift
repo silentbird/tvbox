@@ -2,8 +2,8 @@ import SwiftUI
 
 struct DetailView: View {
     let movie: MovieItem
-    /// 详情加载完直接播放上次看的那一集，用于从观看历史进入
-    var autoPlay = false
+    /// 从观看历史进入时为那条记录，接着播放上次看的那一集：记录里存了剧集就不等详情加载直接播，旧记录等详情加载完再播
+    var resume: StorageManager.VodHistoryItem? = nil
     /// TMDB 详情页的作品，nil 为站点详情页
     var tmdb: TMDBRef? = nil
     /// TMDB 详情页：搜索页已经搜到的影片
@@ -165,7 +165,21 @@ struct DetailView: View {
             }
         }
         .tvboxFullScreenCover(item: $playRequest) { request in
-            if let vodInfo = viewModel.vodInfo {
+            if let item = request.history, let site = item.playableSite, let flag = item.playFlag, let episodes = item.episodes {
+                // 历史只存了上次播放的线路
+                PlayerView(
+                    title: item.vodName,
+                    sources: [PlaySource(flag: flag, episodes: episodes)],
+                    sourceIndex: 0,
+                    episodeIndex: request.episodeIndex,
+                    startPosition: item.progress,
+                    configKey: item.id,
+                    resolvePlayUrl: { flag, episode in try await resolvePlayAddress(site: site, flag: flag, episode: episode) },
+                    onProgress: { _, episodeIndex, position, duration in
+                        viewModel.recordProgress(item, episodeIndex: episodeIndex, progress: position, duration: duration)
+                    }
+                )
+            } else if let vodInfo = viewModel.vodInfo {
                 let sourceIndex = request.sourceIndex
                 let episodeIndex = request.episodeIndex
                 PlayerView(
@@ -188,6 +202,14 @@ struct DetailView: View {
             }
         }
         .onAppear {
+            if let resume, !didAutoPlay, resume.playableSite != nil, let episodes = resume.episodes {
+                didAutoPlay = true
+                playRequest = PlayRequest(
+                    sourceIndex: 0,
+                    episodeIndex: episodes.indices.contains(resume.episodeIndex) ? resume.episodeIndex : 0,
+                    history: resume
+                )
+            }
             if let tmdb {
                 viewModel.loadTMDB(tmdb, title: movie.vodName, candidates: candidates)
             } else {
@@ -206,11 +228,17 @@ struct DetailView: View {
                 selectedSourceIndex = 0
             }
             // TMDB 详情页可能先找到别的站点，只在上次播放的来源上自动播放
-            if autoPlay, !didAutoPlay, tmdb == nil || viewModel.history != nil, let vodInfo = viewModel.vodInfo,
+            if resume != nil, !didAutoPlay, tmdb == nil || viewModel.history != nil, let vodInfo = viewModel.vodInfo,
                vodInfo.playUrls.indices.contains(selectedSourceIndex),
                !vodInfo.playUrls[selectedSourceIndex].isEmpty {
                 didAutoPlay = true
                 play(episodeIndex: viewModel.playIndex(sourceIndex: selectedSourceIndex))
+            }
+        }
+        .onChange(of: playRequest == nil) { _, closed in
+            // 从历史直接播放的进度不经过详情页，关掉播放器后重新读一次，选集和进度跟着更新
+            if closed {
+                viewModel.reloadHistory()
             }
         }
     }
@@ -1169,10 +1197,10 @@ struct DetailView: View {
 
 extension DetailView {
     /// TMDB 详情页：资料来自 TMDB，播放线路在后台从各站点查找
-    init(tmdb: TMDBRef, title: String, posterURL: String?, candidates: [MovieItem] = [], autoPlay: Bool = false) {
+    init(tmdb: TMDBRef, title: String, posterURL: String?, candidates: [MovieItem] = [], resume: StorageManager.VodHistoryItem? = nil) {
         self.init(
             movie: MovieItem(vodId: "tmdb:\(tmdb.mediaType.rawValue):\(tmdb.id)", vodName: title, vodPic: posterURL),
-            autoPlay: autoPlay,
+            resume: resume,
             tmdb: tmdb,
             candidates: candidates
         )
@@ -1376,6 +1404,8 @@ private struct PlayRequest: Identifiable {
     let id = UUID()
     let sourceIndex: Int
     let episodeIndex: Int
+    /// 从历史直接播放时为那条记录，用记录里存的线路播放
+    var history: StorageManager.VodHistoryItem? = nil
 }
 
 // MARK: - Detail ViewModel
@@ -1951,6 +1981,27 @@ class DetailViewModel: ObservableObject {
     }
     
     /// 该剧集上次的播放位置 (秒)，没有记录时从头播放
+    /// 从历史直接播放时记录进度，和详情页播放一样同时更新历史和该集的进度
+    func recordProgress(_ item: StorageManager.VodHistoryItem, episodeIndex: Int, progress: Double, duration: Double) {
+        storageManager.updateHistory(item, episodeIndex: episodeIndex, progress: progress, duration: duration)
+        if let flag = item.playFlag, let episodes = item.episodes, episodes.indices.contains(episodeIndex) {
+            storageManager.savePlayProgress(StorageManager.PlayProgressItem(
+                vodId: item.vodId,
+                siteKey: item.siteKey,
+                flag: flag,
+                episodeIndex: episodeIndex,
+                episodeName: episodes[episodeIndex].name,
+                progress: progress,
+                duration: duration
+            ))
+        }
+    }
+
+    func reloadHistory() {
+        guard let vodInfo, let site else { return }
+        history = storageManager.getVodHistory().first { $0.vodId == vodInfo.vodId && $0.siteKey == site.key }
+    }
+
     func resumePosition(sourceIndex: Int, episodeIndex: Int) -> Double {
         playProgress(sourceIndex: sourceIndex, episodeIndex: episodeIndex)?.progress ?? 0
     }
