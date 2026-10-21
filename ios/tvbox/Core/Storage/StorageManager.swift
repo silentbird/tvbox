@@ -94,6 +94,17 @@ class StorageManager {
         var episodes: [VodInfo.VodPlayItem]?
         /// 在 TMDB 详情页播放的作品，下次从历史进入 TMDB 详情页
         var tmdb: TMDBRef?
+        /// 在 TMDB 详情页看的那一集对应的 TMDB 分集（EpisodeRef 的 rawValue），换线路后按它找到对应的集
+        var episodeRef: String?
+
+        /// 同一条记录：同一站点的同一部片，或者 TMDB 作品和季都相同（不管用的哪个站点）
+        func isSameEntry(as other: VodHistoryItem) -> Bool {
+            if vodId == other.vodId, siteKey == other.siteKey {
+                return true
+            }
+            guard let tmdb, let otherTMDB = other.tmdb else { return false }
+            return tmdb.isSameWork(as: otherTMDB) && tmdb.season == otherTMDB.season
+        }
     }
     
     func getVodHistory() -> [VodHistoryItem] {
@@ -102,7 +113,13 @@ class StorageManager {
         }
         
         do {
-            return try JSONDecoder().decode([VodHistoryItem].self, from: data)
+            // 同一条记录只留最近的，补上 TMDB 作品后之前不同站点的记录也会合并
+            var history: [VodHistoryItem] = []
+            for item in try JSONDecoder().decode([VodHistoryItem].self, from: data)
+            where !history.contains(where: { $0.isSameEntry(as: item) }) {
+                history.append(item)
+            }
+            return history
         } catch {
             AppLogger.debug("Failed to decode vod history: \(error)")
             return []
@@ -113,7 +130,7 @@ class StorageManager {
         var history = getVodHistory()
         
         // 移除已存在的相同记录
-        history.removeAll { $0.vodId == item.vodId && $0.siteKey == item.siteKey }
+        history.removeAll { $0.isSameEntry(as: item) }
         
         // 添加到开头
         history.insert(item, at: 0)
@@ -169,7 +186,7 @@ class StorageManager {
     
     /// 添加播放历史 (从 VodInfo)
     @discardableResult
-    func addHistory(vodInfo: VodInfo, site: SiteBean, sourceIndex: Int, episodeIndex: Int, episodeName: String?, progress: Double, duration: Double, tmdb: TMDBRef? = nil) -> VodHistoryItem {
+    func addHistory(vodInfo: VodInfo, site: SiteBean, sourceIndex: Int, episodeIndex: Int, episodeName: String?, progress: Double, duration: Double, tmdb: TMDBRef? = nil, episodeRef: EpisodeRef? = nil) -> VodHistoryItem {
         let item = VodHistoryItem(
             vodId: vodInfo.vodId,
             vodName: vodInfo.vodName,
@@ -183,7 +200,8 @@ class StorageManager {
             updateTime: Date(),
             playFlag: vodInfo.playFlags.indices.contains(sourceIndex) ? vodInfo.playFlags[sourceIndex] : nil,
             episodes: vodInfo.playUrls.indices.contains(sourceIndex) ? vodInfo.playUrls[sourceIndex] : nil,
-            tmdb: tmdb
+            tmdb: tmdb,
+            episodeRef: episodeRef?.rawValue
         )
 
         addVodHistory(item)
@@ -191,7 +209,7 @@ class StorageManager {
     }
 
     /// 从历史直接播放时更新进度，播放源和剧集沿用原记录
-    func updateHistory(_ item: VodHistoryItem, episodeIndex: Int, progress: Double, duration: Double) {
+    func updateHistory(_ item: VodHistoryItem, episodeIndex: Int, episodeRef: EpisodeRef?, progress: Double, duration: Double) {
         let episodeName = item.episodes.flatMap { $0.indices.contains(episodeIndex) ? $0[episodeIndex].name : nil }
         addVodHistory(VodHistoryItem(
             vodId: item.vodId,
@@ -206,7 +224,8 @@ class StorageManager {
             updateTime: Date(),
             playFlag: item.playFlag,
             episodes: item.episodes,
-            tmdb: item.tmdb
+            tmdb: item.tmdb,
+            episodeRef: episodeRef?.rawValue
         ))
     }
 
@@ -351,6 +370,25 @@ class StorageManager {
         do {
             let data = try JSONEncoder().encode(item)
             userDefaults.set(data, forKey: key)
+        } catch {
+            AppLogger.debug("Failed to encode play progress: \(error)")
+        }
+    }
+
+    /// TMDB 详情页按作品、季和分集记录进度，不管用的哪个站点、线路
+    private func playProgressKey(tmdb: TMDBRef, episode: EpisodeRef) -> String {
+        "\(Keys.playProgress)_tmdb_\(tmdb.mediaType.rawValue)_\(tmdb.id)_\(tmdb.season ?? 0)_\(episode.rawValue)"
+    }
+
+    func getPlayProgress(tmdb: TMDBRef, episode: EpisodeRef) -> PlayProgressItem? {
+        guard let data = userDefaults.data(forKey: playProgressKey(tmdb: tmdb, episode: episode)) else { return nil }
+        return try? JSONDecoder().decode(PlayProgressItem.self, from: data)
+    }
+
+    func savePlayProgress(_ item: PlayProgressItem, tmdb: TMDBRef, episode: EpisodeRef) {
+        do {
+            let data = try JSONEncoder().encode(item)
+            userDefaults.set(data, forKey: playProgressKey(tmdb: tmdb, episode: episode))
         } catch {
             AppLogger.debug("Failed to encode play progress: \(error)")
         }

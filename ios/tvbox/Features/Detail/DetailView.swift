@@ -223,14 +223,14 @@ struct DetailView: View {
             if let index = pendingSourceIndex {
                 selectedSourceIndex = index
                 pendingSourceIndex = nil
-            } else if let history = viewModel.history, let vodInfo = viewModel.vodInfo,
+            } else if viewModel.isOnHistorySource, let history = viewModel.history, let vodInfo = viewModel.vodInfo,
                history.playIndex < vodInfo.playUrls.count {
                 selectedSourceIndex = history.playIndex
             } else {
                 selectedSourceIndex = 0
             }
             // TMDB 详情页可能先找到别的站点，只在上次播放的来源上自动播放
-            if resume != nil, !didAutoPlay, tmdb == nil || viewModel.history != nil, let vodInfo = viewModel.vodInfo,
+            if resume != nil, !didAutoPlay, tmdb == nil || viewModel.isOnHistorySource, let vodInfo = viewModel.vodInfo,
                vodInfo.playUrls.indices.contains(selectedSourceIndex),
                !vodInfo.playUrls[selectedSourceIndex].isEmpty {
                 didAutoPlay = true
@@ -1496,7 +1496,7 @@ class DetailViewModel: ObservableObject {
                     self.vodInfo = details.first
                     self.isLoading = false
                     self.checkCollected(vodId: vodId)
-                    self.history = self.storageManager.getVodHistory().first { $0.vodId == vodId && $0.siteKey == site.key }
+                    self.history = self.findHistory()
                     self.loadMetadata()
                 }
             } catch {
@@ -1767,7 +1767,7 @@ class DetailViewModel: ObservableObject {
         selectedSource = source
         site = source.site
         vodInfo = source.vodInfo
-        history = storageManager.getVodHistory().first { $0.vodId == source.vodInfo.vodId && $0.siteKey == source.site.key }
+        history = findHistory()
         loadEpisodeOverrides()
     }
 
@@ -1961,6 +1961,7 @@ class DetailViewModel: ObservableObject {
               sourceIndex < vodInfo.playFlags.count, sourceIndex < vodInfo.playUrls.count,
               episodeIndex < vodInfo.playUrls[sourceIndex].count else { return }
         let episodeName = vodInfo.playUrls[sourceIndex][episodeIndex].name
+        let ref = tmdbEpisodeRef(names: vodInfo.playUrls[sourceIndex].map(\.name), index: episodeIndex)
         history = storageManager.addHistory(
             vodInfo: vodInfo,
             site: site,
@@ -1969,9 +1970,10 @@ class DetailViewModel: ObservableObject {
             episodeName: episodeName,
             progress: progress,
             duration: duration,
-            tmdb: tmdbRef
+            tmdb: tmdbRef,
+            episodeRef: ref
         )
-        storageManager.savePlayProgress(StorageManager.PlayProgressItem(
+        saveProgress(StorageManager.PlayProgressItem(
             vodId: vodInfo.vodId,
             siteKey: site.key,
             flag: vodInfo.playFlags[sourceIndex],
@@ -1979,15 +1981,33 @@ class DetailViewModel: ObservableObject {
             episodeName: episodeName,
             progress: progress,
             duration: duration
-        ))
+        ), ref: ref)
+    }
+
+    /// 线路自己记一份；TMDB 详情页再按对应的 TMDB 分集记一份，换了线路、站点对应上同一集就显示这个进度
+    private func saveProgress(_ item: StorageManager.PlayProgressItem, ref: EpisodeRef?) {
+        storageManager.savePlayProgress(item)
+        if let tmdbRef, let ref {
+            storageManager.savePlayProgress(item, tmdb: tmdbRef, episode: ref)
+        }
+    }
+
+    /// TMDB 详情页里线路的一集对应的 TMDB 分集，和剧集卡片显示的一样；不是 TMDB 详情页或对不上时为 nil
+    private func tmdbEpisodeRef(names: [String], index: Int) -> EpisodeRef? {
+        guard tmdbRef != nil, names.indices.contains(index),
+              let ref = episodeRef(name: names[index], index: index, numberByOrder: EpisodeMatcher.numberByOrder(names)),
+              ref != .none else { return nil }
+        return ref
     }
     
-    /// 该剧集上次的播放位置 (秒)，没有记录时从头播放
     /// 从历史直接播放时记录进度，和详情页播放一样同时更新历史和该集的进度
     func recordProgress(_ item: StorageManager.VodHistoryItem, episodeIndex: Int, progress: Double, duration: Double) {
-        storageManager.updateHistory(item, episodeIndex: episodeIndex, progress: progress, duration: duration)
+        // 详情页垫在播放器下面，选中的正是这条记录的来源时，分集对应和详情页播放的一样
+        let isSameSource = site?.key == item.siteKey && vodInfo?.vodId == item.vodId
+        let ref = isSameSource ? item.episodes.flatMap { tmdbEpisodeRef(names: $0.map(\.name), index: episodeIndex) } : nil
+        storageManager.updateHistory(item, episodeIndex: episodeIndex, episodeRef: ref, progress: progress, duration: duration)
         if let flag = item.playFlag, let episodes = item.episodes, episodes.indices.contains(episodeIndex) {
-            storageManager.savePlayProgress(StorageManager.PlayProgressItem(
+            saveProgress(StorageManager.PlayProgressItem(
                 vodId: item.vodId,
                 siteKey: item.siteKey,
                 flag: flag,
@@ -1995,15 +2015,50 @@ class DetailViewModel: ObservableObject {
                 episodeName: episodes[episodeIndex].name,
                 progress: progress,
                 duration: duration
-            ))
+            ), ref: ref)
         }
     }
 
     func reloadHistory() {
-        guard let vodInfo, let site else { return }
-        history = storageManager.getVodHistory().first { $0.vodId == vodInfo.vodId && $0.siteKey == site.key }
+        history = findHistory()
     }
 
+    /// 当前来源的播放记录。TMDB 详情页同一季在别的站点看的也算，换了来源接着上次的集和进度
+    private func findHistory() -> StorageManager.VodHistoryItem? {
+        guard let vodInfo, let site else { return nil }
+        return storageManager.getVodHistory().first { item in
+            if item.vodId == vodInfo.vodId, item.siteKey == site.key {
+                return true
+            }
+            guard let tmdbRef, let tmdb = item.tmdb else { return false }
+            return tmdb.isSameWork(as: tmdbRef) && tmdb.season == tmdbRef.season
+        }
+    }
+
+    /// 播放记录就是当前来源的，线路序号能直接用
+    var isOnHistorySource: Bool {
+        guard let history, let vodInfo, let site else { return false }
+        return history.vodId == vodInfo.vodId && history.siteKey == site.key
+    }
+
+    /// 上次看的那一集在这条线路里的位置：同一条线路按序号；TMDB 详情页按对应的 TMDB 分集找，
+    /// 旧记录没存分集时按集名找；对不上时为 nil
+    private func historyEpisodeIndex(sourceIndex: Int) -> Int? {
+        guard let vodInfo, let history, vodInfo.playUrls.indices.contains(sourceIndex) else { return nil }
+        let episodes = vodInfo.playUrls[sourceIndex]
+        if isOnHistorySource, history.playIndex == sourceIndex {
+            return episodes.indices.contains(history.episodeIndex) ? history.episodeIndex : nil
+        }
+        if tmdbRef != nil, let ref = history.episodeRef.flatMap(EpisodeRef.init(rawValue:)) {
+            let names = episodes.map(\.name)
+            return names.indices.first { tmdbEpisodeRef(names: names, index: $0) == ref }
+        }
+        guard let name = history.episodeName else { return nil }
+        return episodes.firstIndex { $0.name == name }
+            ?? episodes.firstIndex { EpisodeMatcher.isSameEpisode($0.name, name) }
+    }
+
+    /// 该剧集上次的播放位置 (秒)，没有记录时从头播放
     func resumePosition(sourceIndex: Int, episodeIndex: Int) -> Double {
         playProgress(sourceIndex: sourceIndex, episodeIndex: episodeIndex)?.progress ?? 0
     }
@@ -2013,6 +2068,27 @@ class DetailViewModel: ObservableObject {
         guard let vodInfo = vodInfo, let site,
               sourceIndex < vodInfo.playFlags.count, sourceIndex < vodInfo.playUrls.count,
               episodeIndex < vodInfo.playUrls[sourceIndex].count else { return nil }
+        // TMDB 详情页按对应的 TMDB 分集取进度，换了线路、站点也是这一集的进度
+        let names = vodInfo.playUrls[sourceIndex].map(\.name)
+        if let tmdbRef, let ref = tmdbEpisodeRef(names: names, index: episodeIndex),
+           let progress = storageManager.getPlayProgress(tmdb: tmdbRef, episode: ref) {
+            return progress
+        }
+        // 上次看的那一集用播放记录的进度，换了线路、站点也接着看。先粗筛，免得每张剧集卡片都把整条线路找一遍
+        let name = names[episodeIndex]
+        let mayBeHistoryEpisode = isOnHistorySource && history?.playIndex == sourceIndex
+            || history?.episodeName.map { $0 == name || EpisodeMatcher.isSameEpisode(name, $0) } == true
+        if let history, mayBeHistoryEpisode, historyEpisodeIndex(sourceIndex: sourceIndex) == episodeIndex {
+            return StorageManager.PlayProgressItem(
+                vodId: vodInfo.vodId,
+                siteKey: site.key,
+                flag: vodInfo.playFlags[sourceIndex],
+                episodeIndex: episodeIndex,
+                episodeName: name,
+                progress: history.progress,
+                duration: history.duration
+            )
+        }
         return storageManager.getPlayProgress(
             vodId: vodInfo.vodId,
             siteKey: site.key,
@@ -2025,13 +2101,7 @@ class DetailViewModel: ObservableObject {
     /// 当前播放源下选中的剧集，对应 Android 的 vodInfo.playIndex：
     /// 有播放记录时选中上次看的那一集，切换播放源后按集名找到对应剧集，否则选中第一集
     func playIndex(sourceIndex: Int) -> Int {
-        guard let vodInfo, sourceIndex < vodInfo.playUrls.count else { return 0 }
-        let episodes = vodInfo.playUrls[sourceIndex]
-        guard let history else { return 0 }
-        if history.playIndex == sourceIndex {
-            return history.episodeIndex < episodes.count ? history.episodeIndex : 0
-        }
-        return episodes.firstIndex { $0.name == history.episodeName } ?? 0
+        historyEpisodeIndex(sourceIndex: sourceIndex) ?? 0
     }
     
     private func checkCollected(vodId: String) {

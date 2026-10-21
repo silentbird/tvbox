@@ -54,6 +54,34 @@ enum EpisodeMatcher {
         return (airDate, title, isPart)
     }
 
+    /// 不同线路、站点的两个集名是不是同一集。同一部片各线路的集名常见「20230813第1期上」「第1期上」「第01期上」「2023-08-13」：
+    /// 两边都有日期按日期，去掉日期后的名字一样也算，都对不上再按集数
+    static func isSameEpisode(_ a: String, _ b: String) -> Bool {
+        if cleanName(a) == cleanName(b) {
+            return true
+        }
+        let keyA = varietyKey(a)
+        let keyB = varietyKey(b)
+        let titleA = normalizeTitle(keyA.title)
+        let titleB = normalizeTitle(keyB.title)
+        // 同一天可能有上下集、加更，两边都有名字时名字也要一样；有一边只有日期（网盘「[1.8GB]20230813.mp4」）就按日期
+        if let dateA = keyA.airDate, let dateB = keyB.airDate {
+            return dateA == dateB && (titleA == titleB || titleA.isEmpty || titleB.isEmpty)
+        }
+        if !titleA.isEmpty, titleA == titleB {
+            return true
+        }
+        guard !keyA.isPart, !keyB.isPart, let number = episodeNumber(a) else { return false }
+        return number == episodeNumber(b)
+    }
+
+    /// 只比文字和数字，数字去掉前面的 0：「第01期上」和「第1期上」一样
+    private static func normalizeTitle(_ title: String) -> String {
+        title.replacingOccurrences(of: "(?<!\\d)0+(?=\\d)", with: "", options: .regularExpression)
+            .lowercased()
+            .filter { $0.isLetter || $0.isNumber }
+    }
+
     /// 从「第01集」「EP01」「01」「[1.3GB]E09.mkv」「[5.4GB]01.mkv」「S01E09」这样的集名里取集数
     static func episodeNumber(_ name: String) -> Int? {
         let name = cleanName(name)
