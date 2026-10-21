@@ -61,6 +61,7 @@ struct PlayerView: View {
     /// 双击快退快进的提示
     @State private var skipFeedback: PlayerTapZone?
     @State private var isImportingSubtitle = false
+    @State private var showsConfigCenter = false
     @FocusState private var isFocused: Bool
     #if os(macOS)
     /// 控制条上弹出的倍速、字幕音轨菜单
@@ -174,6 +175,21 @@ struct PlayerView: View {
                 viewModel.openSubtitleFile(url)
             }
         }
+        // 配置完关掉就重新播放
+        .sheet(isPresented: $showsConfigCenter, onDismiss: viewModel.reload) {
+            NavigationStack {
+                CatNodeConfigCenterView()
+                    .navigationTitle("配置中心")
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("完成") { showsConfigCenter = false }
+                        }
+                    }
+            }
+            #if os(macOS)
+            .frame(minWidth: 760, minHeight: 560)
+            #endif
+        }
         .focusable()
         .focused($isFocused)
         .focusEffectDisabled()
@@ -229,7 +245,10 @@ struct PlayerView: View {
             .allowsHitTesting(false)
 
             VStack(spacing: 0) {
-                topBar
+                // 播放失败时顶栏由错误层显示，控制层隐藏后也能返回
+                if viewModel.error == nil {
+                    topBar
+                }
                 Spacer()
                 #if os(macOS)
                 macBottomBar
@@ -273,8 +292,6 @@ struct PlayerView: View {
             #endif
         }
         #if os(macOS)
-        // 窗口左上角的红绿灯盖在画面上，全屏时才没有
-        .padding(.leading, isFullScreen ? 0 : 64)
         .onHover { isHoveringControls = $0 }
         #endif
     }
@@ -608,10 +625,7 @@ struct PlayerView: View {
     private func errorOverlay(_ error: Error) -> some View {
         ZStack {
             VStack {
-                HStack {
-                    iconButton("chevron.left", size: 20) { dismiss() }
-                    Spacer()
-                }
+                topBar
                 Spacer()
             }
             .padding(.horizontal, 16)
@@ -630,6 +644,9 @@ struct PlayerView: View {
                     .multilineTextAlignment(.center)
                 HStack(spacing: 10) {
                     cardButton("重试", primary: true, action: viewModel.reload)
+                    if needsConfigCenter(error) {
+                        cardButton("前往配置") { showsConfigCenter = true }
+                    }
                     if sources.count > 1 {
                         cardButton("换线路") { openPanel(.episodes) }
                     }
@@ -639,6 +656,13 @@ struct PlayerView: View {
             .frame(maxWidth: 360)
             .padding()
         }
+    }
+
+    /// 配置包提示没登录网盘、没配 Cookie 时，可以直接去配置中心
+    private func needsConfigCenter(_ error: Error) -> Bool {
+        guard let spiderError = error as? SpiderError, case .message(let message) = spiderError,
+              ApiConfig.shared.sites.contains(where: { $0.catNodeApi != nil }) else { return false }
+        return message.contains("配置") || message.contains("登录")
     }
 
     // MARK: - 面板
