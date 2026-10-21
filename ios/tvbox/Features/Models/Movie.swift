@@ -263,6 +263,30 @@ struct VodInfo: Decodable, Identifiable {
     }
 }
 
+/// 按站点返回的格式写回去，保存的检索结果读出来时走同一套解析
+extension VodInfo: Encodable {
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(vodId, forKey: .vodId)
+        try container.encode(vodName, forKey: .vodName)
+        try container.encodeIfPresent(vodPic, forKey: .vodPic)
+        try container.encodeIfPresent(vodYear, forKey: .vodYear)
+        try container.encodeIfPresent(vodArea, forKey: .vodArea)
+        try container.encodeIfPresent(vodActor, forKey: .vodActor)
+        try container.encodeIfPresent(vodDirector, forKey: .vodDirector)
+        try container.encodeIfPresent(vodContent, forKey: .vodContent)
+        try container.encodeIfPresent(vodRemarks, forKey: .vodRemarks)
+        try container.encodeIfPresent(typeName, forKey: .typeName)
+        try container.encodeIfPresent(vodPicSlide, forKey: .vodPicSlide)
+        try container.encodeIfPresent(vodScore, forKey: .vodScore)
+        try container.encode(playFlags.joined(separator: "$$$"), forKey: .vodPlayFrom)
+        let playUrl = playUrls
+            .map { episodes in episodes.map { "\($0.name)$\($0.url)" }.joined(separator: "#") }
+            .joined(separator: "$$$")
+        try container.encode(playUrl, forKey: .vodPlayUrl)
+    }
+}
+
 /// API 响应结构
 struct MovieListResponse: Decodable {
     let list: [MovieItem]?

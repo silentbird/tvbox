@@ -2,7 +2,7 @@ import Foundation
 
 /// 判断站点搜到的影片是不是某部 TMDB 作品（剧集还要对上季）
 enum SourceMatcher {
-    enum Confidence: Sendable {
+    enum Confidence: String, Codable, Sendable {
         /// 片名、季、年份都对得上
         case sure
         /// 片名对得上，但年份、季或集数有疑问，不自动选用
@@ -20,7 +20,7 @@ enum SourceMatcher {
         /// TMDB 的片名、原名，以及手动搜索时用的片名
         let titles: [String]
         /// 剧集的季，nil 表示哪一季都算（搜索页还不知道看哪一季）
-        let season: Int?
+        var season: Int?
         /// 当季首播或电影上映年份
         let year: Int?
         /// 当季集数

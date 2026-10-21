@@ -426,9 +426,9 @@ struct DetailView: View {
                 HStack(spacing: 8) {
                     ProgressView()
                         .controlSize(.small)
-                    Text(viewModel.totalSiteCount > 0
-                         ? "正在查找资源 \(viewModel.finishedSiteCount)/\(viewModel.totalSiteCount)"
-                         : "正在查找资源")
+                    Text([viewModel.isResolvingFromHits ? "正在获取线路" : "正在检索资源", viewModel.findProgressText]
+                        .compactMap { $0 }
+                        .joined(separator: " "))
                         .monospacedDigit()
                 }
                 .font(.subheadline)
@@ -438,7 +438,7 @@ struct DetailView: View {
                 .tvboxGlass(in: Capsule())
             } else if viewModel.sources.isEmpty {
                 Button(action: { viewModel.findSources() }) {
-                    Text("暂无资源 · 重新查找")
+                    Text("暂无资源 · 重新检索")
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(.white)
@@ -693,7 +693,10 @@ struct DetailView: View {
         }
         Section {
             if viewModel.isFindingSources {
-                Text("还有 \(viewModel.totalSiteCount - viewModel.finishedSiteCount) 个站点在查找…")
+                Text("还有 \(viewModel.totalSiteCount - viewModel.finishedSiteCount) 个站点在检索…")
+            } else if let searched = viewModel.lastSearchText {
+                Text("上次检索 \(searched) · \(viewModel.totalSiteCount) 个站点")
+                Button("重新检索") { viewModel.findSources() }
             }
             Button("换个片名搜索…", action: askKeyword)
         }
@@ -715,28 +718,44 @@ struct DetailView: View {
         }
     }
 
+    /// 检索中显示进度；检索完显示站点数、上次检索时间和重新检索按钮
     @ViewBuilder
     private var sourceStatus: some View {
         if viewModel.isFindingSources {
             HStack(spacing: 4) {
                 ProgressView()
                     .controlSize(.mini)
-                if viewModel.totalSiteCount > 0 {
-                    Text("\(viewModel.finishedSiteCount)/\(viewModel.totalSiteCount)")
+                if let progress = viewModel.findProgressText {
+                    Text(progress)
                         .monospacedDigit()
                 }
                 if viewModel.selectedSource == nil {
-                    Text("查找中")
+                    Text(viewModel.isResolvingFromHits ? "获取线路" : "检索中")
                 }
             }
             .font(.caption)
             .foregroundColor(.white.opacity(0.6))
             .fixedSize()
-        } else if !viewModel.sources.isEmpty {
-            Text("\(Set(viewModel.sources.map(\.site.key)).count) 个站点")
-                .font(.caption)
-                .foregroundColor(.white.opacity(0.6))
-                .fixedSize()
+        } else {
+            let siteCount = Set(viewModel.sources.map(\.site.key)).count
+            HStack(spacing: 6) {
+                Text([siteCount > 0 ? "\(siteCount) 个站点" : "暂无", viewModel.lastSearchText]
+                    .compactMap { $0 }
+                    .joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.6))
+                Button(action: { viewModel.findSources() }) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(width: 26, height: 26)
+                        .tvboxGlass(in: Circle())
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("重新检索")
+            }
+            .fixedSize()
         }
     }
 
@@ -1385,12 +1404,24 @@ class DetailViewModel: ObservableObject {
     @Published private(set) var sources: [VodSource] = []
     @Published private(set) var selectedSource: VodSource?
     @Published private(set) var isFindingSources = false
+    /// 只用保存的搜索结果拉站点详情，不搜站点（切到没看过的季）
+    @Published private(set) var isResolvingFromHits = false
     @Published private(set) var finishedSiteCount = 0
     @Published private(set) var totalSiteCount = 0
+    @Published private(set) var finishedDetailCount = 0
+    @Published private(set) var totalDetailCount = 0
+    /// 上次检索各站点的时间，没检索过为 nil
+    @Published private(set) var lastSearchDate: Date?
     /// 在站点上搜索用的片名，默认 TMDB 片名，可以手动换
     @Published private(set) var findKeyword = ""
     /// 手动换的片名
     private var customKeyword: String?
+    /// 保存的检索结果，同一部作品各季共用
+    private var savedSources: SourceStore.Entry?
+    /// 站点搜到、片名对得上这部作品的影片
+    private var hits: [MovieItem] = []
+    /// 开始播放后不再用刷新的详情替换当前来源
+    private var hasPlayed = false
     /// 进入时带的片名，TMDB 资料取不到时用来搜索
     private var fallbackTitle = ""
     /// 搜索页已经搜到的影片
@@ -1499,20 +1530,63 @@ class DetailViewModel: ObservableObject {
             let metadata = await TMDBService.shared.metadata(type: ref.mediaType, id: ref.id, season: ref.season ?? 1)
             guard !Task.isCancelled else { return }
             self.metadata = metadata
-            findSources()
+            await restoreSources()
         }
     }
 
-    /// 在各站点查找资源，keyword 为手动换的片名
-    func findSources(keyword: String? = nil) {
+    private var seasonKey: Int { tmdbRef?.season ?? 0 }
+
+    /// 有保存的结果就直接用；这一季没保存过时用保存的搜索结果拉详情；都没有才检索各站点
+    private func restoreSources() async {
         guard let ref = tmdbRef else { return }
+        if savedSources == nil {
+            savedSources = await SourceStore.shared.entry(for: ref)
+        }
+        guard let entry = savedSources else {
+            findSources()
+            return
+        }
+        customKeyword = entry.customKeyword
+        findKeyword = entry.keyword
+        lastSearchDate = entry.date
+        hits = entry.hits.map(\.movie)
+
+        guard let saved = entry.seasons[seasonKey] else {
+            runFinder(searchSites: false)
+            return
+        }
+        clearSources()
+        finishedSiteCount = entry.siteCount
+        totalSiteCount = entry.siteCount
+        let allSites = apiConfig.sites
+        sources = saved.compactMap { $0.restore(sites: allSites) }
+        isFindingSources = false
+        if let source = sources.first(where: isLastPlayed) ?? sources.first(where: { $0.match.confidence == .sure }) ?? sources.first {
+            select(source)
+            refreshSelectedSource()
+        }
+    }
+
+    /// 重新检索各站点，覆盖保存的结果；keyword 为手动换的片名
+    func findSources(keyword: String? = nil) {
         if let keyword = keyword?.trimmingCharacters(in: .whitespacesAndNewlines), !keyword.isEmpty {
             customKeyword = keyword
         }
+        runFinder(searchSites: true)
+    }
+
+    /// - Parameter searchSites: false 时不搜站点，只拉保存的搜索结果里对得上这一季的详情
+    private func runFinder(searchSites: Bool) {
+        guard let ref = tmdbRef else { return }
         findKeyword = customKeyword ?? metadata?.title ?? fallbackTitle
         findTask?.cancel()
         clearSources()
         isFindingSources = true
+        isResolvingFromHits = !searchSites
+        if !searchSites, let savedSources {
+            finishedSiteCount = savedSources.siteCount
+            totalSiteCount = savedSources.siteCount
+        }
 
         let season = metadata?.seasons.first { $0.number == ref.season }
         let target = SourceMatcher.Target(
@@ -1528,14 +1602,11 @@ class DetailViewModel: ObservableObject {
         if let last = lastHistory, last.tmdb?.season == ref.season, let site = resolve(last.siteKey) {
             trusted.append((MovieItem(vodId: last.vodId, vodName: last.vodName, sourceKey: last.siteKey), site))
         }
-        let candidates = self.candidates.compactMap { item in resolve(item.sourceKey).map { (item, $0) } }
-        let stream = SourceFinder.find(
-            keyword: findKeyword,
-            trusted: trusted,
-            candidates: candidates,
-            target: target,
-            sites: SiteSearcher.sites
-        )
+        // 搜索页搜到的也算进搜索结果
+        var newHits = searchSites ? candidates : hits
+        let candidates = newHits.compactMap { item in resolve(item.sourceKey).map { (item, $0) } }
+        let sites = searchSites ? SiteSearcher.sites : []
+        let stream = SourceFinder.find(keyword: findKeyword, trusted: trusted, candidates: candidates, target: target, sites: sites)
 
         // 退出详情页后不再继续查找
         findTask = Task { [weak self] in
@@ -1545,16 +1616,66 @@ class DetailViewModel: ObservableObject {
                 case .progress(let finished, let total):
                     finishedSiteCount = finished
                     totalSiteCount = total
+                case .hit(let item):
+                    if !newHits.contains(where: { $0.sourceKey == item.sourceKey && $0.vodId == item.vodId }) {
+                        newHits.append(item)
+                    }
+                case .detailStarted:
+                    totalDetailCount += 1
+                case .detailFinished:
+                    finishedDetailCount += 1
                 case .found(let source):
                     receive(source)
                 }
             }
             guard let self, !Task.isCancelled else { return }
             isFindingSources = false
+            isResolvingFromHits = false
             // 只找到可能相关的，也先选上一个
             if selectedSource == nil, let first = sources.first {
                 select(first)
             }
+            if searchSites {
+                hits = newHits
+                lastSearchDate = Date()
+            }
+            saveSources(replacingAllSeasons: searchSites)
+        }
+    }
+
+    /// 重新检索后各季都要按新的搜索结果重新找，只留当前这一季
+    private func saveSources(replacingAllSeasons: Bool) {
+        guard let ref = tmdbRef else { return }
+        var entry = savedSources ?? SourceStore.Entry(keyword: findKeyword, date: Date(), siteCount: 0, hits: [], seasons: [:])
+        if replacingAllSeasons {
+            entry.seasons = [:]
+            entry.siteCount = totalSiteCount
+        }
+        entry.keyword = findKeyword
+        entry.customKeyword = customKeyword
+        entry.date = lastSearchDate ?? entry.date
+        entry.hits = hits.map(SourceStore.Hit.init)
+        entry.seasons[seasonKey] = sources.map(SourceStore.Source.init)
+        savedSources = entry
+        Task { await SourceStore.shared.save(entry, for: ref) }
+    }
+
+    /// 用保存的来源打开时，后台重新拉一次当前来源的详情，追更的剧能看到新集
+    private func refreshSelectedSource() {
+        guard let source = selectedSource else { return }
+        Task { [weak self] in
+            let fresh = await SiteSearcher.withTimeout(seconds: SiteSearcher.siteTimeoutSeconds) {
+                try? await SpiderManager.shared.detailContent(site: source.site, ids: [source.vodInfo.vodId]).first
+            } ?? nil
+            guard let self, let fresh, fresh.playUrls.contains(where: { !$0.isEmpty }),
+                  let index = sources.firstIndex(where: { $0.id == source.id }) else { return }
+            let updated = VodSource(site: source.site, vodInfo: fresh, match: source.match)
+            sources[index] = updated
+            if selectedSource?.id == source.id, !hasPlayed {
+                selectedSource = updated
+                vodInfo = fresh
+            }
+            saveSources(replacingAllSeasons: false)
         }
     }
 
@@ -1566,14 +1687,37 @@ class DetailViewModel: ObservableObject {
         keepsSource = false
         finishedSiteCount = 0
         totalSiteCount = 0
+        finishedDetailCount = 0
+        totalDetailCount = 0
+    }
+
+    /// 检索进度，只拉详情时按详情数算
+    var findProgressText: String? {
+        if isResolvingFromHits {
+            return totalDetailCount > 0 ? "\(finishedDetailCount)/\(totalDetailCount)" : nil
+        }
+        return totalSiteCount > 0 ? "\(finishedSiteCount)/\(totalSiteCount)" : nil
+    }
+
+    /// 上次检索的时间，如「刚刚」「3小时前」
+    var lastSearchText: String? {
+        guard let lastSearchDate else { return nil }
+        if Date().timeIntervalSince(lastSearchDate) < 60 { return "刚刚" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.unitsStyle = .short
+        return formatter.localizedString(for: lastSearchDate, relativeTo: Date())
+    }
+
+    private func isLastPlayed(_ source: VodSource) -> Bool {
+        lastHistory.map { $0.siteKey == source.site.key && $0.vodId == source.vodInfo.vodId } ?? false
     }
 
     private func receive(_ source: VodSource) {
         sources.append(source)
         guard !keepsSource else { return }
         // 上次播放的来源优先，其次第一个可靠的
-        let isLast = lastHistory.map { $0.siteKey == source.site.key && $0.vodId == source.vodInfo.vodId } ?? false
-        if isLast {
+        if isLastPlayed(source) {
             select(source)
             keepsSource = true
         } else if selectedSource == nil, source.match.confidence == .sure {
@@ -1594,6 +1738,7 @@ class DetailViewModel: ObservableObject {
     /// 开始播放后不再自动换来源，免得播放记录记到别的站点
     func willPlay() {
         keepsSource = true
+        hasPlayed = true
     }
 
     /// 手动选定 TMDB 作品后重新加载资料，nil 表示不使用

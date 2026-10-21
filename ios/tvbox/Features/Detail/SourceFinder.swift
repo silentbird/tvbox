@@ -16,13 +16,18 @@ enum SourceFinder {
     enum Event {
         /// 搜完了几个站点
         case progress(finished: Int, total: Int)
+        /// 站点搜到、片名对得上这部作品任一季的影片，保存下来切季时用
+        case hit(MovieItem)
+        /// 开始、拉完一个站点详情
+        case detailStarted
+        case detailFinished
         case found(VodSource)
     }
 
     /// - Parameters:
     ///   - trusted: 上次播放的影片，不比片名直接拉详情
     ///   - candidates: 搜索页已经搜到的影片，和搜索结果一样比过片名再拉详情
-    ///   - sites: 要搜索的站点
+    ///   - sites: 要搜索的站点，为空时只拉 trusted 和 candidates 的详情
     static func find(
         keyword: String,
         trusted: [(MovieItem, SiteBean)],
@@ -38,13 +43,17 @@ enum SourceFinder {
                 /// 同一部影片只拉一次详情，返回拉详情的任务
                 func fetch(_ item: MovieItem, site: SiteBean, match: SourceMatcher.Match) -> (@Sendable () async -> Void)? {
                     guard requested.insert("\(site.key)|\(item.vodId)").inserted else { return nil }
+                    continuation.yield(.detailStarted)
                     return {
                         await limiter.acquire()
                         let source = Task.isCancelled ? nil : await loadSource(item, site: site, match: match, target: target)
                         await limiter.release()
                         if let source { continuation.yield(.found(source)) }
+                        continuation.yield(.detailFinished)
                     }
                 }
+                var anySeason = target
+                anySeason.season = nil
 
                 await withTaskGroup(of: Void.self) { group in
                     for (item, site) in trusted {
@@ -57,12 +66,16 @@ enum SourceFinder {
                         group.addTask(operation: operation)
                     }
 
+                    guard !sites.isEmpty else { return }
                     var finished = 0
                     continuation.yield(.progress(finished: 0, total: sites.count))
                     for await (site, items) in SiteSearcher.searchAll(keyword: keyword, sites: sites) {
                         finished += 1
                         continuation.yield(.progress(finished: finished, total: sites.count))
                         for item in items {
+                            if SourceMatcher.match(name: item.vodName, year: item.vodYear, target: anySeason) != nil {
+                                continuation.yield(.hit(item))
+                            }
                             guard let match = SourceMatcher.match(name: item.vodName, year: item.vodYear, target: target),
                                   let operation = fetch(item, site: site, match: match) else { continue }
                             group.addTask(operation: operation)

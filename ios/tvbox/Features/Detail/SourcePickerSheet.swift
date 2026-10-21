@@ -25,14 +25,22 @@ struct SourcePickerSheet: View {
                     if viewModel.isFindingSources {
                         HStack(spacing: 8) {
                             ProgressView()
-                            Text("还有 \(viewModel.totalSiteCount - viewModel.finishedSiteCount) 个站点在查找…")
+                            Text(viewModel.isResolvingFromHits
+                                 ? "正在获取线路 \(viewModel.findProgressText ?? "")"
+                                 : "还有 \(viewModel.totalSiteCount - viewModel.finishedSiteCount) 个站点在检索…")
                                 .foregroundColor(.secondary)
                                 .monospacedDigit()
                         }
+                    } else {
+                        Button("重新检索") { viewModel.findSources() }
                     }
                     Button("换个片名搜索…") {
                         keywordInput = viewModel.findKeyword
                         showKeywordAlert = true
+                    }
+                } footer: {
+                    if !viewModel.isFindingSources, let searched = viewModel.lastSearchText {
+                        Text("上次检索 \(searched) · \(viewModel.totalSiteCount) 个站点。检索结果会保存，重新检索才会覆盖。")
                     }
                 }
             }
