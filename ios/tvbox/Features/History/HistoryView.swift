@@ -40,6 +40,7 @@ struct HistoryView: View {
         }
         .onAppear {
             viewModel.loadHistory()
+            viewModel.matchTMDB()
         }
     }
     
@@ -231,6 +232,28 @@ class HistoryViewModel: ObservableObject {
     
     func loadHistory() {
         historyItems = storageManager.getVodHistory()
+    }
+
+    private var matchTask: Task<Void, Never>?
+
+    /// 站点详情页播放的没有 TMDB 作品，按片名匹配后补上，之后点开直接进 TMDB 详情页接着播。
+    /// 和站点详情页补全资料用同一套匹配和缓存，手动改过的匹配也算
+    func matchTMDB() {
+        guard TMDBSettings.isConfigured, matchTask == nil else { return }
+        let items = historyItems.filter { $0.tmdb == nil }
+        guard !items.isEmpty else { return }
+        matchTask = Task { @MainActor [weak self] in
+            for item in items {
+                guard var ref = await TMDBService.shared.ref(siteKey: item.siteKey, vodName: item.vodName, episodeCount: item.episodes?.count ?? 0) else { continue }
+                // 片名没写季数的剧集算第一季，TMDB 详情页要季对得上才把上次的站点当作来源
+                if ref.mediaType == .tv, ref.season == nil {
+                    ref.season = 1
+                }
+                StorageManager.shared.setHistoryTMDB(ref, for: item.id)
+            }
+            self?.loadHistory()
+            self?.matchTask = nil
+        }
     }
     
     func removeHistory(_ item: StorageManager.VodHistoryItem) {

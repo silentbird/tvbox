@@ -148,6 +148,13 @@ actor TMDBService {
         }
     }
 
+    /// 站点影片按片名匹配到的 TMDB 作品，剧集的季取片名里的季数。给站点详情页留下的旧收藏、历史补上作品用
+    func ref(siteKey: String, vodName: String, episodeCount: Int) async -> TMDBRef? {
+        guard let metadata = await metadata(siteKey: siteKey, vodName: vodName, year: nil, episodeCount: episodeCount) else { return nil }
+        let season = metadata.mediaType == .tv ? Self.parseTitle(vodName).season : nil
+        return TMDBRef(mediaType: metadata.mediaType, id: metadata.tmdbID, season: season)
+    }
+
     /// 按 TMDB 作品取资料，TMDB 详情页用；剧集取指定的季，电影忽略季
     func metadata(type: TMDBMediaType, id: Int, season: Int) async -> VodMetadata? {
         guard TMDBSettings.isConfigured else { return nil }

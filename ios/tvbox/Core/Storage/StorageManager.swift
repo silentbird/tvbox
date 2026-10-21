@@ -149,6 +149,14 @@ class StorageManager {
         }
     }
     
+    /// 给站点详情页播放的补上匹配到的 TMDB 作品，不改顺序
+    func setHistoryTMDB(_ tmdb: TMDBRef, for id: String) {
+        var history = getVodHistory()
+        guard let index = history.firstIndex(where: { $0.id == id }) else { return }
+        history[index].tmdb = tmdb
+        saveVodHistory(history)
+    }
+
     func removeVodHistory(vodId: String, siteKey: String) {
         var history = getVodHistory()
         history.removeAll { $0.vodId == vodId && $0.siteKey == siteKey }
@@ -262,6 +270,14 @@ class StorageManager {
     func removeCollects(tmdb: TMDBRef) {
         var collects = getCollects()
         collects.removeAll { $0.tmdb?.isSameWork(as: tmdb) == true }
+        saveCollects(collects)
+    }
+
+    /// 给站点详情页收藏的补上匹配到的 TMDB 作品
+    func setCollectTMDB(_ tmdb: TMDBRef, for id: String) {
+        var collects = getCollects()
+        guard let index = collects.firstIndex(where: { $0.id == id }) else { return }
+        collects[index].tmdb = tmdb
         saveCollects(collects)
     }
     

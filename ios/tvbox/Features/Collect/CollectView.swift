@@ -41,6 +41,7 @@ struct CollectView: View {
         }
         .onAppear {
             viewModel.loadCollects()
+            viewModel.matchTMDB()
         }
     }
     
@@ -161,7 +162,26 @@ class CollectViewModel: ObservableObject {
     func loadCollects() {
         collectItems = storageManager.getCollects()
     }
-    
+
+    private var matchTask: Task<Void, Never>?
+
+    /// 站点详情页收藏的没有 TMDB 作品，按片名匹配后补上，之后点开直接进 TMDB 详情页。
+    /// 和站点详情页补全资料用同一套匹配和缓存，手动改过的匹配也算
+    func matchTMDB() {
+        guard TMDBSettings.isConfigured, matchTask == nil else { return }
+        let items = collectItems.filter { $0.tmdb == nil }
+        guard !items.isEmpty else { return }
+        matchTask = Task { @MainActor [weak self] in
+            for item in items {
+                // 收藏没存集数，只能靠片名里的季数判断是不是剧集
+                guard let ref = await TMDBService.shared.ref(siteKey: item.siteKey, vodName: item.vodName, episodeCount: 0) else { continue }
+                StorageManager.shared.setCollectTMDB(ref, for: item.id)
+            }
+            self?.loadCollects()
+            self?.matchTask = nil
+        }
+    }
+
     func removeCollect(_ item: StorageManager.VodCollectItem) {
         var collects = storageManager.getCollects()
         collects.removeAll { $0.id == item.id }
