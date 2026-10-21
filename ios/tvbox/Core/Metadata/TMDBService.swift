@@ -17,15 +17,23 @@ enum TMDBSettings {
         ("en-US", "English"),
     ]
 
+    /// 默认开启，搜索和详情页以 TMDB 作品为主
     static var isEnabled: Bool {
-        get { UserDefaults.standard.bool(forKey: Keys.enabled) }
+        get { UserDefaults.standard.object(forKey: Keys.enabled) as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: Keys.enabled) }
     }
 
-    /// v3 的 API Key 或 v4 的读取令牌都可以
-    static var apiKey: String {
+    /// App 内置的 Key，设置里没填时用它
+    static let builtInApiKey = "18ecaade61d81dcfbcfd19966163bd7b"
+
+    /// 设置里填的 Key，v3 的 API Key 或 v4 的读取令牌都可以
+    static var customApiKey: String {
         get { UserDefaults.standard.string(forKey: Keys.apiKey) ?? "" }
         set { UserDefaults.standard.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Keys.apiKey) }
+    }
+
+    static var apiKey: String {
+        customApiKey.isEmpty ? builtInApiKey : customApiKey
     }
 
     /// 代理地址，接口 /3/ 和图片 /t/p/ 都走它
@@ -136,6 +144,24 @@ actor TMDBService {
         } catch {
             AppLogger.debug("[TMDB] \(vodName) 获取资料失败: \(error)")
             // 网络出错时用过期的缓存顶上
+            return cached?.metadata
+        }
+    }
+
+    /// 按 TMDB 作品取资料，TMDB 详情页用；剧集取指定的季，电影忽略季
+    func metadata(type: TMDBMediaType, id: Int, season: Int) async -> VodMetadata? {
+        guard TMDBSettings.isConfigured else { return nil }
+        let key = "tmdb|\(type.rawValue):\(id)|\(type == .tv ? season : 0)"
+        let cached = readCache(key: key)
+        if let cached, cached.metadata != nil, Date().timeIntervalSince(cached.date) < Self.matchedTTL {
+            return cached.metadata
+        }
+        do {
+            let metadata = try await load(type: type, id: id, season: season)
+            writeCache(CacheEntry(metadata: metadata, date: Date()), key: key)
+            return metadata
+        } catch {
+            AppLogger.debug("[TMDB] \(type.rawValue):\(id) 获取资料失败: \(error)")
             return cached?.metadata
         }
     }
@@ -313,23 +339,30 @@ actor TMDBService {
             VodMetadata.Person(name: $0.name, character: $0.roles?.first?.character, profilePath: $0.profilePath, isDirector: false)
         }
         let ratings = (detail.contentRatings?.results ?? []).map { ($0.iso31661, $0.rating) }
+        let seasons = (detail.seasons ?? [])
+            .filter { $0.seasonNumber > 0 }
+            .map { VodMetadata.Season(number: $0.seasonNumber, name: $0.name, episodeCount: $0.episodeCount, airDate: $0.airDate) }
 
         return VodMetadata(
             tmdbID: id,
             mediaType: .tv,
             title: detail.name,
+            originalTitle: detail.originalName,
             overview: detail.overview.flatMap { $0.isEmpty ? nil : $0 },
             backdropPath: detail.backdropPath,
             logoPath: Self.pickLogo(detail.images?.logos, originalLanguage: detail.originalLanguage),
             rating: detail.voteAverage.flatMap { $0 > 0 ? $0 : nil },
             certification: Self.pickCertification(ratings),
             genres: detail.genres?.map(\.name) ?? [],
-            releaseDate: detail.firstAirDate,
+            // 第二季以后显示当季的首播日期
+            releaseDate: seasons.first { $0.number == season }?.airDate ?? detail.firstAirDate,
             runtime: detail.episodeRunTime?.first ?? episodes.first?.runtime,
             episodeCount: episodeCount,
             episodes: episodes,
             specials: specials,
-            cast: Array(directors) + cast
+            cast: Array(directors) + cast,
+            seasons: seasons,
+            season: season
         )
     }
 
@@ -375,6 +408,7 @@ actor TMDBService {
             tmdbID: id,
             mediaType: .movie,
             title: detail.title,
+            originalTitle: detail.originalTitle,
             overview: detail.overview.flatMap { $0.isEmpty ? nil : $0 },
             backdropPath: detail.backdropPath,
             logoPath: Self.pickLogo(detail.images?.logos, originalLanguage: detail.originalLanguage),
@@ -386,7 +420,9 @@ actor TMDBService {
             episodeCount: nil,
             episodes: [],
             specials: [],
-            cast: Array(directors) + cast
+            cast: Array(directors) + cast,
+            seasons: [],
+            season: nil
         )
     }
 
@@ -538,6 +574,7 @@ private struct Images: Decodable {
 
 private struct TVDetail: Decodable {
     let name: String
+    let originalName: String?
     let overview: String?
     let backdropPath: String?
     let voteAverage: Double?
@@ -553,6 +590,8 @@ private struct TVDetail: Decodable {
 
     struct Season: Decodable {
         let seasonNumber: Int
+        let name: String?
+        let episodeCount: Int?
         let airDate: String?
     }
 
@@ -606,6 +645,7 @@ private struct SeasonDetail: Decodable {
 
 private struct MovieDetail: Decodable {
     let title: String
+    let originalTitle: String?
     let overview: String?
     let backdropPath: String?
     let voteAverage: Double?

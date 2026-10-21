@@ -38,9 +38,13 @@ struct SearchView: View {
         .background(Color.tvboxSystemGroupedBackground)
         .navigationTitle("搜索")
         .tvboxInlineNavigationBarTitle()
-        // 和详情页一样，用快速搜索搜所有站点
+        // 开启 TMDB 时先搜 TMDB，站点资源在后台查找；否则用快速搜索搜所有站点
         .navigationDestination(item: $searchKeyword) { keyword in
-            FastSearchView(keyword: keyword)
+            if TMDBSettings.isConfigured {
+                TMDBSearchView(keyword: keyword)
+            } else {
+                FastSearchView(keyword: keyword)
+            }
         }
     }
 

@@ -191,3 +191,15 @@ private struct WindowCoverPresenter<Item: Identifiable, CoverContent: View>: Vie
     }
 }
 #endif
+
+extension View {
+    /// 浮在内容上的控件背景：iOS 26 / macOS 26 用玻璃，之前的系统用毛玻璃材质
+    @ViewBuilder
+    func tvboxGlass<S: Shape>(in shape: S) -> some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            self.glassEffect(.regular.interactive(), in: shape)
+        } else {
+            self.background(.ultraThinMaterial, in: shape)
+        }
+    }
+}

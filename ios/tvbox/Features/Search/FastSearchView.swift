@@ -146,11 +146,6 @@ struct FastSearchView: View {
 // MARK: - Fast Search ViewModel
 @MainActor
 final class FastSearchViewModel: ObservableObject {
-    /// 同时搜索的站点数，对应 Android SEARCH_THREAD_COUNT
-    private static let concurrentSiteCount = 6
-    /// 单站点超时，对应 Android SEARCH_SITE_TIMEOUT_SECONDS
-    private static let siteTimeoutSeconds: UInt64 = 15
-
     /// 有结果的站点，按返回先后排列
     @Published private(set) var resultSites: [SiteBean] = []
     /// "全部" 展示的结果
@@ -188,33 +183,13 @@ final class FastSearchViewModel: ObservableObject {
     func searchIfNeeded(keyword: String) {
         guard searchTask == nil else { return }
         self.keyword = keyword
-
-        // 和 Android 一样把当前站点排在最前面
-        let apiConfig = ApiConfig.shared
-        var sites = apiConfig.searchableSites
-        if let homeKey = apiConfig.currentSite?.key, let index = sites.firstIndex(where: { $0.key == homeKey }) {
-            sites.insert(sites.remove(at: index), at: 0)
-        }
+        let sites = SiteSearcher.sites
         totalCount = sites.count
 
         searchTask = Task { [weak self] in
-            await withTaskGroup(of: (SiteBean, [MovieItem]).self) { group in
-                var pending = sites[...]
-                for _ in 0..<Self.concurrentSiteCount {
-                    guard let site = pending.popFirst() else { break }
-                    group.addTask { (site, await Self.search(site: site, keyword: keyword)) }
-                }
-
-                for await (site, items) in group {
-                    guard let self else {
-                        group.cancelAll()
-                        return
-                    }
-                    self.receive(items, from: site)
-                    if let site = pending.popFirst() {
-                        group.addTask { (site, await Self.search(site: site, keyword: keyword)) }
-                    }
-                }
+            for await (site, items) in SiteSearcher.searchAll(keyword: keyword, sites: sites) {
+                guard let self else { return }
+                self.receive(items, from: site)
             }
         }
     }
@@ -224,13 +199,8 @@ final class FastSearchViewModel: ObservableObject {
     private func receive(_ items: [MovieItem], from site: SiteBean) {
         finishedCount += 1
 
-        let matched = items
-            .filter { matches($0.vodName) }
-            .map { item -> MovieItem in
-                var item = item
-                item.sourceKey = site.key
-                return item
-            }
+        // SiteSearcher 已经带上了来源站点
+        let matched = items.filter { matches($0.vodName) }
         guard !matched.isEmpty else {
             showHighMatchIfNeeded()
             return
@@ -257,7 +227,7 @@ final class FastSearchViewModel: ObservableObject {
     /// 前一批站点都没搜到精确匹配时，"全部" 改为展示以片名开头的结果
     private func showHighMatchIfNeeded() {
         guard !showsHighMatch, mainResults.isEmpty,
-              finishedCount >= min(Self.concurrentSiteCount, totalCount) else { return }
+              finishedCount >= min(SiteSearcher.concurrentSiteCount, totalCount) else { return }
         showsHighMatch = true
         mainResults = highMatchResults
     }
@@ -272,31 +242,5 @@ final class FastSearchViewModel: ObservableObject {
         let compactName = name.filter { !$0.isWhitespace }
         let compactKeyword = keyword.filter { !$0.isWhitespace }
         return !compactKeyword.isEmpty && compactName.hasPrefix(compactKeyword)
-    }
-
-    /// 搜索单个站点，失败或超时返回空结果
-    private nonisolated static func search(site: SiteBean, keyword: String) async -> [MovieItem] {
-        await withTaskGroup(of: [MovieItem]?.self) { group in
-            group.addTask {
-                do {
-                    let spider = try await SpiderManager.shared.getSpider(for: site)
-                    return try await spider.searchContent(keyword: keyword, quick: false, page: 1)
-                } catch {
-                    AppLogger.debug("[FastSearch] \(site.name) 搜索失败: \(error)")
-                    return []
-                }
-            }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: siteTimeoutSeconds * 1_000_000_000)
-                return nil
-            }
-
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            if first == nil {
-                AppLogger.debug("[FastSearch] \(site.name) 搜索超时")
-            }
-            return first ?? []
-        }
     }
 }

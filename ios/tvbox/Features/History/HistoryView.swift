@@ -143,10 +143,12 @@ struct HistoryView: View {
         }
     }
 
-    /// 和 Android 一样：站点还在就进详情并接着播放，否则按片名快速搜索
+    /// 在 TMDB 详情页看的回到 TMDB 详情页；其它和 Android 一样：站点还在就进详情并接着播放，否则按片名快速搜索
     @ViewBuilder
     private func destination(for item: StorageManager.VodHistoryItem) -> some View {
-        if ApiConfig.shared.sites.contains(where: { $0.key == item.siteKey }) {
+        if let tmdb = item.tmdb, TMDBSettings.isConfigured {
+            DetailView(tmdb: tmdb, title: item.vodName, posterURL: item.vodPic, autoPlay: true)
+        } else if ApiConfig.shared.sites.contains(where: { $0.key == item.siteKey }) {
             DetailView(movie: MovieItem(vodId: item.vodId, vodName: item.vodName, vodPic: item.vodPic, sourceKey: item.siteKey), autoPlay: true)
         } else {
             FastSearchView(keyword: item.vodName)

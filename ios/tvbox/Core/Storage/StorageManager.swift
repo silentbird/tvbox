@@ -92,6 +92,8 @@ class StorageManager {
         /// 播放源名称和该播放源的剧集，用于从历史直接播放，不用再加载详情。旧记录没有这两项
         var playFlag: String?
         var episodes: [VodInfo.VodPlayItem]?
+        /// 在 TMDB 详情页播放的作品，下次从历史进入 TMDB 详情页
+        var tmdb: TMDBRef?
     }
     
     func getVodHistory() -> [VodHistoryItem] {
@@ -159,7 +161,7 @@ class StorageManager {
     
     /// 添加播放历史 (从 VodInfo)
     @discardableResult
-    func addHistory(vodInfo: VodInfo, site: SiteBean, sourceIndex: Int, episodeIndex: Int, episodeName: String?, progress: Double, duration: Double) -> VodHistoryItem {
+    func addHistory(vodInfo: VodInfo, site: SiteBean, sourceIndex: Int, episodeIndex: Int, episodeName: String?, progress: Double, duration: Double, tmdb: TMDBRef? = nil) -> VodHistoryItem {
         let item = VodHistoryItem(
             vodId: vodInfo.vodId,
             vodName: vodInfo.vodName,
@@ -172,7 +174,8 @@ class StorageManager {
             duration: duration,
             updateTime: Date(),
             playFlag: vodInfo.playFlags.indices.contains(sourceIndex) ? vodInfo.playFlags[sourceIndex] : nil,
-            episodes: vodInfo.playUrls.indices.contains(sourceIndex) ? vodInfo.playUrls[sourceIndex] : nil
+            episodes: vodInfo.playUrls.indices.contains(sourceIndex) ? vodInfo.playUrls[sourceIndex] : nil,
+            tmdb: tmdb
         )
 
         addVodHistory(item)
@@ -194,7 +197,8 @@ class StorageManager {
             duration: duration,
             updateTime: Date(),
             playFlag: item.playFlag,
-            episodes: item.episodes
+            episodes: item.episodes,
+            tmdb: item.tmdb
         ))
     }
     
@@ -219,6 +223,8 @@ class StorageManager {
         let siteKey: String
         let siteName: String
         let createTime: Date
+        /// 在 TMDB 详情页收藏的作品
+        var tmdb: TMDBRef?
     }
     
     func getCollects() -> [VodCollectItem] {
@@ -234,7 +240,7 @@ class StorageManager {
         }
     }
     
-    func addCollect(vodInfo: VodInfo, site: SiteBean) {
+    func addCollect(vodInfo: VodInfo, site: SiteBean, tmdb: TMDBRef? = nil) {
         let item = VodCollectItem(
             vodId: vodInfo.vodId,
             vodName: vodInfo.vodName,
@@ -242,7 +248,8 @@ class StorageManager {
             vodRemarks: vodInfo.vodRemarks,
             siteKey: site.key,
             siteName: site.name,
-            createTime: Date()
+            createTime: Date(),
+            tmdb: tmdb
         )
         
         var collects = getCollects()
@@ -265,6 +272,17 @@ class StorageManager {
     func isCollected(vodId: String, siteKey: String) -> Bool {
         let collects = getCollects()
         return collects.contains { $0.vodId == vodId && $0.siteKey == siteKey }
+    }
+
+    /// TMDB 详情页按作品算收藏，不管收藏时用的是哪个站点
+    func isCollected(tmdb: TMDBRef) -> Bool {
+        getCollects().contains { $0.tmdb?.isSameWork(as: tmdb) == true }
+    }
+
+    func removeCollects(tmdb: TMDBRef) {
+        var collects = getCollects()
+        collects.removeAll { $0.tmdb?.isSameWork(as: tmdb) == true }
+        saveCollects(collects)
     }
     
     func clearCollects() {

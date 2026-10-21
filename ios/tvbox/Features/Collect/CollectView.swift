@@ -60,10 +60,12 @@ struct CollectView: View {
         }
     }
 
-    /// 和 Android 一样：站点还在就进详情，否则按片名快速搜索
+    /// 在 TMDB 详情页收藏的回到 TMDB 详情页；其它和 Android 一样：站点还在就进详情，否则按片名快速搜索
     @ViewBuilder
     private func destination(for item: StorageManager.VodCollectItem) -> some View {
-        if ApiConfig.shared.sites.contains(where: { $0.key == item.siteKey }) {
+        if let tmdb = item.tmdb, TMDBSettings.isConfigured {
+            DetailView(tmdb: tmdb, title: item.vodName, posterURL: item.vodPic, candidates: [MovieItem(vodId: item.vodId, vodName: item.vodName, sourceKey: item.siteKey)])
+        } else if ApiConfig.shared.sites.contains(where: { $0.key == item.siteKey }) {
             DetailView(movie: MovieItem(vodId: item.vodId, vodName: item.vodName, vodPic: item.vodPic, sourceKey: item.siteKey))
         } else {
             FastSearchView(keyword: item.vodName)

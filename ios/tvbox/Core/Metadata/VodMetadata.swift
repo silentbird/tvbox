@@ -9,6 +9,7 @@ struct VodMetadata: Codable, Sendable {
     let tmdbID: Int
     let mediaType: TMDBMediaType
     let title: String
+    let originalTitle: String?
     let overview: String?
     let backdropPath: String?
     let logoPath: String?
@@ -25,6 +26,17 @@ struct VodMetadata: Codable, Sendable {
     /// 第 0 季特别篇里当季播出期间的先导片、加更等
     let specials: [Episode]
     let cast: [Person]
+    /// 剧集的各季（不含第 0 季特别篇），电影为空
+    let seasons: [Season]
+    /// 资料对应的季，电影为 nil
+    let season: Int?
+
+    struct Season: Codable, Sendable, Hashable {
+        let number: Int
+        let name: String?
+        let episodeCount: Int?
+        let airDate: String?
+    }
 
     struct Episode: Codable, Sendable {
         let number: Int
@@ -118,4 +130,16 @@ struct TMDBSearchItem: Identifiable, Sendable {
     let year: String?
     let posterPath: String?
     let overview: String?
+}
+
+/// TMDB 上的一部作品，剧集带上看的是哪一季。TMDB 详情页的入口，也存在历史和收藏里
+struct TMDBRef: Codable, Hashable, Sendable {
+    let mediaType: TMDBMediaType
+    let id: Int
+    /// 剧集的季，电影为 nil
+    var season: Int?
+
+    func isSameWork(as other: TMDBRef) -> Bool {
+        mediaType == other.mediaType && id == other.id
+    }
 }

@@ -4,6 +4,10 @@ struct DetailView: View {
     let movie: MovieItem
     /// 详情加载完直接播放上次看的那一集，用于从观看历史进入
     var autoPlay = false
+    /// TMDB 详情页的作品，nil 为站点详情页
+    var tmdb: TMDBRef? = nil
+    /// TMDB 详情页：搜索页已经搜到的影片
+    var candidates: [MovieItem] = []
     @StateObject private var viewModel = DetailViewModel()
     @State private var selectedSourceIndex = 0
     @State private var playRequest: PlayRequest?
@@ -18,6 +22,11 @@ struct DetailView: View {
     /// 剧集、演职人员两排横向列表最左边显示的那一项
     @State private var episodePosition: Int?
     @State private var castPosition: Int?
+    @State private var showSourcePicker = false
+    /// 在线路面板里选的线路，切换来源后再选中
+    @State private var pendingSourceIndex: Int?
+    @State private var showKeywordAlert = false
+    @State private var keywordInput = ""
     @Environment(\.tvboxWideLayout) private var isWideLayout
 
     var body: some View {
@@ -78,7 +87,9 @@ struct DetailView: View {
                 infoSection
 
                 // 播放源和剧集
-                if let vodInfo = viewModel.vodInfo {
+                if tmdb != nil {
+                    tmdbSourceSection
+                } else if let vodInfo = viewModel.vodInfo {
                     playSourceSection(vodInfo: vodInfo)
                 }
 
@@ -118,6 +129,20 @@ struct DetailView: View {
                 }
             }
         }
+        .sheet(isPresented: $showSourcePicker) {
+            SourcePickerSheet(
+                viewModel: viewModel,
+                selectedFlagIndex: selectedSourceIndex,
+                onPick: pickSource
+            )
+        }
+        .alert("换个片名搜索", isPresented: $showKeywordAlert) {
+            TextField("片名", text: $keywordInput)
+            Button("搜索") { viewModel.findSources(keyword: keywordInput) }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("用别名、原名等在各站点重新查找")
+        }
         .sheet(isPresented: $showMatch) {
             TMDBMatchView(vodName: movie.vodName) { item in
                 viewModel.rematch(item)
@@ -150,7 +175,7 @@ struct DetailView: View {
                     sourceIndex: sourceIndex,
                     episodeIndex: episodeIndex,
                     startPosition: viewModel.resumePosition(sourceIndex: sourceIndex, episodeIndex: episodeIndex),
-                    configKey: "\(site?.key ?? "")_\(vodInfo.vodId)",
+                    configKey: "\(viewModel.site?.key ?? "")_\(vodInfo.vodId)",
                     resolvePlayUrl: { flag, episode in try await viewModel.getPlayUrlAsync(flag: flag, episode: episode) },
                     onProgress: { sourceIndex, episodeIndex, position, duration in
                         viewModel.addToHistory(sourceIndex: sourceIndex, episodeIndex: episodeIndex, progress: position, duration: duration)
@@ -159,15 +184,25 @@ struct DetailView: View {
             }
         }
         .onAppear {
-            viewModel.loadDetail(vodId: movie.vodId, site: site)
+            if let tmdb {
+                viewModel.loadTMDB(tmdb, title: movie.vodName, candidates: candidates)
+            } else {
+                viewModel.loadDetail(vodId: movie.vodId, site: site)
+            }
         }
-        .onChange(of: viewModel.vodInfo?.vodId) { _, _ in
-            // 和 Android 一样恢复上次播放的线路
-            if let history = viewModel.history, let vodInfo = viewModel.vodInfo,
+        .onChange(of: viewModel.sourceKey) { _, _ in
+            // 和 Android 一样恢复上次播放的线路；在线路面板里选的优先
+            if let index = pendingSourceIndex {
+                selectedSourceIndex = index
+                pendingSourceIndex = nil
+            } else if let history = viewModel.history, let vodInfo = viewModel.vodInfo,
                history.playIndex < vodInfo.playUrls.count {
                 selectedSourceIndex = history.playIndex
+            } else {
+                selectedSourceIndex = 0
             }
-            if autoPlay, !didAutoPlay, let vodInfo = viewModel.vodInfo,
+            // TMDB 详情页可能先找到别的站点，只在上次播放的来源上自动播放
+            if autoPlay, !didAutoPlay, tmdb == nil || viewModel.history != nil, let vodInfo = viewModel.vodInfo,
                vodInfo.playUrls.indices.contains(selectedSourceIndex),
                !vodInfo.playUrls[selectedSourceIndex].isEmpty {
                 didAutoPlay = true
@@ -236,7 +271,7 @@ struct DetailView: View {
             }
             .contentShape(Rectangle())
             .contextMenu {
-                if TMDBSettings.isConfigured {
+                if TMDBSettings.isConfigured && tmdb == nil {
                     Button(action: { showMatch = true }) {
                         Label("重新匹配 TMDB", systemImage: "arrow.triangle.2.circlepath")
                     }
@@ -247,7 +282,7 @@ struct DetailView: View {
     /// 有 TMDB 片名 Logo 时用 Logo，没有或加载不出来时用文字
     @ViewBuilder
     private var titleView: some View {
-        let title = Text(movie.vodName)
+        let title = Text(tmdb != nil ? viewModel.metadata?.title ?? movie.vodName : movie.vodName)
             .font(isWideLayout ? .largeTitle : .title)
             .fontWeight(.heavy)
             .foregroundColor(.white)
@@ -269,14 +304,12 @@ struct DetailView: View {
     private var infoSection: some View {
         if isWideLayout {
             HStack(alignment: .top, spacing: 24) {
-                VStack(spacing: 10) {
-                    secondaryButtons
-                    playButton
-                }
-                .frame(width: 270)
+                actionButtons
+                    .frame(width: 270)
 
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 8) {
                     metaRows
+                    seasonChips
                     descriptionText
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -286,10 +319,8 @@ struct DetailView: View {
         } else {
             VStack(alignment: .leading, spacing: 12) {
                 metaRows
-                VStack(spacing: 10) {
-                    playButton
-                    secondaryButtons
-                }
+                actionButtons
+                seasonChips
                 descriptionText
             }
             .padding(.horizontal, horizontalPadding)
@@ -297,28 +328,67 @@ struct DetailView: View {
         }
     }
 
-    private var secondaryButtons: some View {
+    /// 播放按钮右边放小的圆形按钮；TMDB 详情页已经在后台搜各站点，不需要快搜
+    private var actionButtons: some View {
         HStack(spacing: 10) {
-            NavigationLink(destination: FastSearchView(keyword: movie.vodName)) {
-                pillLabel("快搜", systemImage: "magnifyingglass")
+            playButton
+
+            if tmdb == nil {
+                NavigationLink(destination: FastSearchView(keyword: movie.vodName)) {
+                    circleLabel(systemImage: "magnifyingglass")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("快搜")
             }
-            .buttonStyle(.plain)
 
             Button(action: { viewModel.toggleCollect() }) {
-                pillLabel(viewModel.isCollected ? "已收藏" : "收藏", systemImage: viewModel.isCollected ? "heart.fill" : "heart")
+                circleLabel(systemImage: viewModel.isCollected ? "heart.fill" : "heart")
                     .foregroundColor(viewModel.isCollected ? .red : .white)
             }
             .buttonStyle(.plain)
+            .disabled(viewModel.vodInfo == nil)
+            .accessibilityLabel(viewModel.isCollected ? "取消收藏" : "收藏")
         }
     }
 
-    private func pillLabel(_ title: String, systemImage: String) -> some View {
-        Label(title, systemImage: systemImage)
-            .font(.subheadline)
-            .frame(maxWidth: .infinity)
-            .frame(height: 36)
-            .background(Color.white.opacity(0.18), in: Capsule())
-            .contentShape(Capsule())
+    private func circleLabel(systemImage: String) -> some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundColor(.white)
+            .frame(width: 40, height: 40)
+            .tvboxGlass(in: Circle())
+            .contentShape(Circle())
+    }
+
+    /// 剧集有多季时选看哪一季
+    @ViewBuilder
+    private var seasonChips: some View {
+        if tmdb != nil, let seasons = viewModel.metadata?.seasons, seasons.count > 1 {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(seasons, id: \.number) { season in
+                        let isSelected = season.number == viewModel.tmdbRef?.season
+                        Button(action: { viewModel.selectSeason(season.number) }) {
+                            let label = Text(season.name ?? "第 \(season.number) 季")
+                                .font(.caption)
+                                .fontWeight(isSelected ? .semibold : .regular)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                            if isSelected {
+                                label
+                                    .foregroundColor(.black)
+                                    .background(Color.white, in: Capsule())
+                            } else {
+                                label
+                                    .foregroundColor(.white.opacity(0.9))
+                                    .tvboxGlass(in: Capsule())
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
     }
 
     /// 有播放记录时显示「继续播放」和上次看到的集数
@@ -351,6 +421,34 @@ struct DetailView: View {
                 .contentShape(Capsule())
             }
             .buttonStyle(.plain)
+        } else if tmdb != nil {
+            if viewModel.isFindingSources {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(viewModel.totalSiteCount > 0
+                         ? "正在查找资源 \(viewModel.finishedSiteCount)/\(viewModel.totalSiteCount)"
+                         : "正在查找资源")
+                        .monospacedDigit()
+                }
+                .font(.subheadline)
+                .foregroundColor(.white.opacity(0.7))
+                .frame(maxWidth: .infinity)
+                .frame(height: 40)
+                .tvboxGlass(in: Capsule())
+            } else if viewModel.sources.isEmpty {
+                Button(action: { viewModel.findSources() }) {
+                    Text("暂无资源 · 重新查找")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 40)
+                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.4)))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 
@@ -415,13 +513,15 @@ struct DetailView: View {
             }
     }
 
-    /// 站点简介优先，站点没有时用 TMDB 的
+    /// 站点详情页站点简介优先，TMDB 详情页 TMDB 简介优先
     @ViewBuilder
     private var descriptionText: some View {
         let siteContent = viewModel.vodInfo?.vodContent?
             .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        if let content = siteContent?.isEmpty == false ? siteContent : viewModel.metadata?.overview {
+        let siteText = siteContent?.isEmpty == false ? siteContent : nil
+        // TMDB 详情页以 TMDB 简介为主
+        if let content = tmdb != nil ? viewModel.metadata?.overview ?? siteText : siteText ?? viewModel.metadata?.overview {
             Text(content)
                 .font(.footnote)
                 .foregroundColor(.white.opacity(0.78))
@@ -447,16 +547,7 @@ struct DetailView: View {
                     }
                     Spacer()
                     if episodes.count > 1 {
-                        Button(action: { showAllEpisodes = true }) {
-                            HStack(spacing: 2) {
-                                Text("全部 \(episodes.count) 集")
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
-                            }
-                            .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.85))
-                        }
-                        .buttonStyle(.plain)
+                        allEpisodesButton(count: episodes.count)
                     }
                 }
                 .padding(.horizontal, horizontalPadding)
@@ -466,32 +557,276 @@ struct DetailView: View {
                 }
 
                 if episodes.count > 1 {
-                    let cardWidth = episodeCardWidth
-                    let numberByOrder = EpisodeMatcher.numberByOrder(episodes.map(\.name))
-                    ShelfScrollView(
-                        count: episodes.count,
-                        itemStride: cardWidth + 12,
-                        buttonCenterY: cardWidth * 9 / 32,
-                        leadingPadding: horizontalPadding,
-                        position: $episodePosition
-                    ) {
-                        ForEach(Array(episodes.enumerated()), id: \.offset) { index, episode in
-                            episodeCard(index: index, episode: episode, isPlayIndex: index == playIndex, numberByOrder: numberByOrder)
-                        }
-                    }
-                    .onAppear {
-                        episodePosition = playIndex
-                    }
-                    .onChange(of: selectedSourceIndex) { _, _ in
-                        episodePosition = viewModel.playIndex(sourceIndex: selectedSourceIndex)
-                    }
-                    .task(id: "\(viewModel.metadata?.tmdbID ?? 0)-\(selectedSourceIndex)") {
-                        await viewModel.matchEpisodesWithAI(sourceIndex: selectedSourceIndex)
-                    }
+                    episodeShelf(episodes: episodes, playIndex: playIndex)
                 }
             }
             .padding(.top, 24)
         }
+    }
+
+    private func allEpisodesButton(count: Int) -> some View {
+        Button(action: { showAllEpisodes = true }) {
+            HStack(spacing: 2) {
+                Text("全部 \(count) 集")
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+            }
+            .font(.subheadline)
+            .foregroundColor(.white.opacity(0.85))
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+    }
+
+    private func episodeShelf(episodes: [VodInfo.VodPlayItem], playIndex: Int) -> some View {
+        let cardWidth = episodeCardWidth
+        let numberByOrder = EpisodeMatcher.numberByOrder(episodes.map(\.name))
+        return ShelfScrollView(
+            count: episodes.count,
+            itemStride: cardWidth + 12,
+            buttonCenterY: cardWidth * 9 / 32,
+            leadingPadding: horizontalPadding,
+            position: $episodePosition
+        ) {
+            ForEach(Array(episodes.enumerated()), id: \.offset) { index, episode in
+                episodeCard(index: index, episode: episode, isPlayIndex: index == playIndex, numberByOrder: numberByOrder)
+            }
+        }
+        .onAppear {
+            episodePosition = playIndex
+        }
+        .onChange(of: selectedSourceIndex) { _, _ in
+            episodePosition = viewModel.playIndex(sourceIndex: selectedSourceIndex)
+        }
+        .task(id: "\(viewModel.metadata?.tmdbID ?? 0)-\(viewModel.sourceKey)-\(selectedSourceIndex)") {
+            await viewModel.matchEpisodesWithAI(sourceIndex: selectedSourceIndex)
+        }
+    }
+
+    // MARK: - TMDB Source Section
+    /// TMDB 详情页的线路：来源按站点分组，没找到之前分集先用 TMDB 的占位
+    private var tmdbSourceSection: some View {
+        let episodes = viewModel.vodInfo.flatMap { vodInfo in
+            vodInfo.playUrls.indices.contains(selectedSourceIndex) ? vodInfo.playUrls[selectedSourceIndex] : nil
+        } ?? []
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                sectionTitle("线路")
+                if let source = viewModel.selectedSource {
+                    sourceButton(source)
+                }
+                sourceStatus
+                Spacer(minLength: 0)
+                if episodes.count > 1 {
+                    allEpisodesButton(count: episodes.count)
+                }
+            }
+            .padding(.horizontal, horizontalPadding)
+
+            if viewModel.vodInfo == nil {
+                if !viewModel.isFindingSources {
+                    noSourceNote
+                        .padding(.horizontal, horizontalPadding)
+                }
+                placeholderShelf
+            } else if episodes.count > 1 {
+                episodeShelf(episodes: episodes, playIndex: viewModel.playIndex(sourceIndex: selectedSourceIndex))
+            }
+        }
+        .padding(.top, 24)
+    }
+
+    private func sourceTitle(_ source: VodSource, flagIndex: Int) -> String {
+        let flags = source.vodInfo.playFlags
+        return flags.indices.contains(flagIndex) ? "\(source.site.name) · \(flags[flagIndex])" : source.site.name
+    }
+
+    /// 宽屏用按站点分组的下拉菜单，窄屏打开线路面板
+    @ViewBuilder
+    private func sourceButton(_ source: VodSource) -> some View {
+        let label = HStack(spacing: 4) {
+            Text(sourceTitle(source, flagIndex: selectedSourceIndex))
+                .lineLimit(1)
+            Image(systemName: "chevron.down")
+                .font(.caption2.weight(.semibold))
+                .opacity(0.7)
+        }
+        .font(.subheadline.weight(.semibold))
+        .foregroundColor(.white)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .tvboxGlass(in: Capsule())
+        .contentShape(Capsule())
+
+        if isWideLayout {
+            Menu {
+                sourceMenuItems
+            } label: {
+                label
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .fixedSize()
+        } else {
+            Button(action: { showSourcePicker = true }) {
+                label
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    @ViewBuilder
+    private var sourceMenuItems: some View {
+        let sure = viewModel.sources.filter { $0.match.confidence == .sure }
+        let possible = viewModel.sources.filter { $0.match.confidence == .possible }
+        ForEach(sure) { source in
+            Section(source.site.name) {
+                sourceFlagButtons(source)
+            }
+        }
+        if !possible.isEmpty {
+            Section("可能相关") {
+                ForEach(possible) { source in
+                    sourceFlagButtons(source, note: source.match.reason)
+                }
+            }
+        }
+        Section {
+            if viewModel.isFindingSources {
+                Text("还有 \(viewModel.totalSiteCount - viewModel.finishedSiteCount) 个站点在查找…")
+            }
+            Button("换个片名搜索…", action: askKeyword)
+        }
+    }
+
+    private func sourceFlagButtons(_ source: VodSource, note: String? = nil) -> some View {
+        ForEach(Array(source.vodInfo.playFlags.enumerated()), id: \.offset) { index, flag in
+            let count = source.vodInfo.playUrls.indices.contains(index) ? source.vodInfo.playUrls[index].count : 0
+            let title = [note == nil ? flag : "\(source.site.name) · \(flag)", "\(count) 集", note]
+                .compactMap { $0 }
+                .joined(separator: " · ")
+            Button(action: { pickSource(source, flagIndex: index) }) {
+                if source.id == viewModel.selectedSource?.id && index == selectedSourceIndex {
+                    Label(title, systemImage: "checkmark")
+                } else {
+                    Text(title)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var sourceStatus: some View {
+        if viewModel.isFindingSources {
+            HStack(spacing: 4) {
+                ProgressView()
+                    .controlSize(.mini)
+                if viewModel.totalSiteCount > 0 {
+                    Text("\(viewModel.finishedSiteCount)/\(viewModel.totalSiteCount)")
+                        .monospacedDigit()
+                }
+                if viewModel.selectedSource == nil {
+                    Text("查找中")
+                }
+            }
+            .font(.caption)
+            .foregroundColor(.white.opacity(0.6))
+            .fixedSize()
+        } else if !viewModel.sources.isEmpty {
+            Text("\(Set(viewModel.sources.map(\.site.key)).count) 个站点")
+                .font(.caption)
+                .foregroundColor(.white.opacity(0.6))
+                .fixedSize()
+        }
+    }
+
+    private var noSourceNote: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("\(viewModel.totalSiteCount) 个站点都没有找到「\(viewModel.findKeyword)」，可以换个片名再搜，比如原名或别名。")
+            Button(action: askKeyword) {
+                Text("换个片名搜索…")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .tvboxGlass(in: Capsule())
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+        .font(.footnote)
+        .foregroundColor(.white.opacity(0.7))
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    /// 还没有来源时用 TMDB 分集占位，不能点
+    @ViewBuilder
+    private var placeholderShelf: some View {
+        if let episodes = viewModel.metadata?.episodes, !episodes.isEmpty {
+            let cardWidth = episodeCardWidth
+            ShelfScrollView(
+                count: episodes.count,
+                itemStride: cardWidth + 12,
+                buttonCenterY: cardWidth * 9 / 32,
+                leadingPadding: horizontalPadding,
+                position: $episodePosition
+            ) {
+                ForEach(episodes, id: \.number) { episode in
+                    placeholderEpisodeCard(episode)
+                }
+            }
+        }
+    }
+
+    private func placeholderEpisodeCard(_ episode: VodMetadata.Episode) -> some View {
+        let width = episodeCardWidth
+        return VStack(alignment: .leading, spacing: 4) {
+            Color.clear
+                .frame(width: width, height: width * 9 / 16)
+                .overlay {
+                    if let still = TMDBSettings.imageURL(episode.stillPath, size: "w300") {
+                        CachedAsyncImage(urlString: still) {
+                            episodePlaceholder(number: episode.number, name: "")
+                        }
+                        .id(still)
+                    } else {
+                        episodePlaceholder(number: episode.number, name: "")
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+
+            Text(["E\(String(format: "%02d", episode.number))", episode.name].compactMap { $0 }.joined(separator: " · "))
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(.white)
+                .lineLimit(1)
+
+            if let overview = episode.overview {
+                Text(overview)
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.62))
+                    .lineLimit(isWideLayout ? 3 : 2)
+            }
+        }
+        .frame(width: width, alignment: .leading)
+        .opacity(0.45)
+    }
+
+    /// 选同一来源的另一条线路直接切换；换来源时等详情换好再选中
+    private func pickSource(_ source: VodSource, flagIndex: Int) {
+        if source.id == viewModel.selectedSource?.id {
+            selectedSourceIndex = flagIndex
+        } else {
+            pendingSourceIndex = flagIndex
+            viewModel.select(source, byUser: true)
+        }
+    }
+
+    private func askKeyword() {
+        keywordInput = viewModel.findKeyword
+        showKeywordAlert = true
     }
 
     private func sectionTitle(_ title: String) -> some View {
@@ -804,7 +1139,20 @@ struct DetailView: View {
     }
 
     private func play(episodeIndex: Int) {
+        viewModel.willPlay()
         playRequest = PlayRequest(sourceIndex: selectedSourceIndex, episodeIndex: episodeIndex)
+    }
+}
+
+extension DetailView {
+    /// TMDB 详情页：资料来自 TMDB，播放线路在后台从各站点查找
+    init(tmdb: TMDBRef, title: String, posterURL: String?, candidates: [MovieItem] = [], autoPlay: Bool = false) {
+        self.init(
+            movie: MovieItem(vodId: "tmdb:\(tmdb.mediaType.rawValue):\(tmdb.id)", vodName: title, vodPic: posterURL),
+            autoPlay: autoPlay,
+            tmdb: tmdb,
+            candidates: candidates
+        )
     }
 }
 
@@ -1029,12 +1377,39 @@ class DetailViewModel: ObservableObject {
     @Published var parsedUrl: URL?
     @Published var parsedHeaders: [String: String]?
     @Published var parseStatus: String = ""
-    
-    private var site: SiteBean?
+
+    // MARK: TMDB 详情页
+    /// TMDB 详情页的作品，站点详情页为 nil
+    @Published private(set) var tmdbRef: TMDBRef?
+    /// 已找到的播放来源，按找到的先后排列
+    @Published private(set) var sources: [VodSource] = []
+    @Published private(set) var selectedSource: VodSource?
+    @Published private(set) var isFindingSources = false
+    @Published private(set) var finishedSiteCount = 0
+    @Published private(set) var totalSiteCount = 0
+    /// 在站点上搜索用的片名，默认 TMDB 片名，可以手动换
+    @Published private(set) var findKeyword = ""
+    /// 手动换的片名
+    private var customKeyword: String?
+    /// 进入时带的片名，TMDB 资料取不到时用来搜索
+    private var fallbackTitle = ""
+    /// 搜索页已经搜到的影片
+    private var candidates: [MovieItem] = []
+    /// 上次在这部作品上播放的记录
+    private var lastHistory: StorageManager.VodHistoryItem?
+    /// 手动选过线路或已经开始播放后，不再自动换来源
+    private var keepsSource = false
+    private var findTask: Task<Void, Never>?
+
+    private(set) var site: SiteBean?
     private let apiConfig = ApiConfig.shared
     private let storageManager = StorageManager.shared
     private let spiderManager = SpiderManager.shared
     private let parserManager = ParserManager.shared
+
+    deinit {
+        findTask?.cancel()
+    }
     
     /// 加载视频详情
     /// - Parameters:
@@ -1082,6 +1457,143 @@ class DetailViewModel: ObservableObject {
             guard !Task.isCancelled else { return }
             self.metadata = metadata
         }
+    }
+
+    /// 切换来源时，详情页据此恢复线路和自动播放
+    var sourceKey: String {
+        "\(site?.key ?? "")|\(vodInfo?.vodId ?? "")"
+    }
+
+    /// 打开 TMDB 详情页：先取 TMDB 资料，再在各站点查找资源
+    func loadTMDB(_ ref: TMDBRef, title: String, candidates: [MovieItem]) {
+        // 从播放器、其它页面返回时 onAppear 会再次触发
+        guard tmdbRef == nil else { return }
+        var ref = ref
+        fallbackTitle = title
+        self.candidates = candidates
+        // 上次看过就沿用那一季，上次的站点作为第一个来源
+        lastHistory = storageManager.getVodHistory().first { $0.tmdb?.isSameWork(as: ref) == true }
+        if ref.mediaType == .tv, ref.season == nil {
+            ref.season = lastHistory?.tmdb?.season ?? 1
+        }
+        tmdbRef = ref
+        isCollected = storageManager.isCollected(tmdb: ref)
+        loadTMDBMetadata()
+    }
+
+    func selectSeason(_ season: Int) {
+        guard var ref = tmdbRef, ref.season != season else { return }
+        ref.season = season
+        tmdbRef = ref
+        loadTMDBMetadata()
+    }
+
+    private func loadTMDBMetadata() {
+        guard let ref = tmdbRef else { return }
+        metadataTask?.cancel()
+        findTask?.cancel()
+        // 切换季时先留着上一季的资料，背景图不会闪
+        clearSources()
+        isFindingSources = true
+        metadataTask = Task {
+            let metadata = await TMDBService.shared.metadata(type: ref.mediaType, id: ref.id, season: ref.season ?? 1)
+            guard !Task.isCancelled else { return }
+            self.metadata = metadata
+            findSources()
+        }
+    }
+
+    /// 在各站点查找资源，keyword 为手动换的片名
+    func findSources(keyword: String? = nil) {
+        guard let ref = tmdbRef else { return }
+        if let keyword = keyword?.trimmingCharacters(in: .whitespacesAndNewlines), !keyword.isEmpty {
+            customKeyword = keyword
+        }
+        findKeyword = customKeyword ?? metadata?.title ?? fallbackTitle
+        findTask?.cancel()
+        clearSources()
+        isFindingSources = true
+
+        let season = metadata?.seasons.first { $0.number == ref.season }
+        let target = SourceMatcher.Target(
+            mediaType: ref.mediaType,
+            titles: [metadata?.title ?? fallbackTitle, metadata?.originalTitle, customKeyword].compactMap { $0 },
+            season: ref.mediaType == .tv ? ref.season : nil,
+            year: (season?.airDate ?? metadata?.releaseDate).flatMap { Int($0.prefix(4)) },
+            episodeCount: metadata?.episodeCount
+        )
+        let allSites = apiConfig.sites
+        let resolve: (String?) -> SiteBean? = { key in allSites.first { $0.key == key } }
+        var trusted: [(MovieItem, SiteBean)] = []
+        if let last = lastHistory, last.tmdb?.season == ref.season, let site = resolve(last.siteKey) {
+            trusted.append((MovieItem(vodId: last.vodId, vodName: last.vodName, sourceKey: last.siteKey), site))
+        }
+        let candidates = self.candidates.compactMap { item in resolve(item.sourceKey).map { (item, $0) } }
+        let stream = SourceFinder.find(
+            keyword: findKeyword,
+            trusted: trusted,
+            candidates: candidates,
+            target: target,
+            sites: SiteSearcher.sites
+        )
+
+        // 退出详情页后不再继续查找
+        findTask = Task { [weak self] in
+            for await event in stream {
+                guard let self else { return }
+                switch event {
+                case .progress(let finished, let total):
+                    finishedSiteCount = finished
+                    totalSiteCount = total
+                case .found(let source):
+                    receive(source)
+                }
+            }
+            guard let self, !Task.isCancelled else { return }
+            isFindingSources = false
+            // 只找到可能相关的，也先选上一个
+            if selectedSource == nil, let first = sources.first {
+                select(first)
+            }
+        }
+    }
+
+    private func clearSources() {
+        sources = []
+        selectedSource = nil
+        vodInfo = nil
+        history = nil
+        keepsSource = false
+        finishedSiteCount = 0
+        totalSiteCount = 0
+    }
+
+    private func receive(_ source: VodSource) {
+        sources.append(source)
+        guard !keepsSource else { return }
+        // 上次播放的来源优先，其次第一个可靠的
+        let isLast = lastHistory.map { $0.siteKey == source.site.key && $0.vodId == source.vodInfo.vodId } ?? false
+        if isLast {
+            select(source)
+            keepsSource = true
+        } else if selectedSource == nil, source.match.confidence == .sure {
+            select(source)
+        }
+    }
+
+    /// byUser 为手动选的，之后不再自动换
+    func select(_ source: VodSource, byUser: Bool = false) {
+        if byUser { keepsSource = true }
+        selectedSource = source
+        site = source.site
+        vodInfo = source.vodInfo
+        history = storageManager.getVodHistory().first { $0.vodId == source.vodInfo.vodId && $0.siteKey == source.site.key }
+        loadEpisodeOverrides()
+    }
+
+    /// 开始播放后不再自动换来源，免得播放记录记到别的站点
+    func willPlay() {
+        keepsSource = true
     }
 
     /// 手动选定 TMDB 作品后重新加载资料，nil 表示不使用
@@ -1238,6 +1750,16 @@ class DetailViewModel: ObservableObject {
     /// 切换收藏状态
     func toggleCollect() {
         guard let vodInfo = vodInfo, let site else { return }
+        // TMDB 详情页按作品收藏
+        if let tmdbRef {
+            if isCollected {
+                storageManager.removeCollects(tmdb: tmdbRef)
+            } else {
+                storageManager.addCollect(vodInfo: vodInfo, site: site, tmdb: tmdbRef)
+            }
+            isCollected.toggle()
+            return
+        }
         
         if isCollected {
             storageManager.removeCollect(vodId: vodInfo.vodId, siteKey: site.key)
@@ -1265,7 +1787,8 @@ class DetailViewModel: ObservableObject {
             episodeIndex: episodeIndex,
             episodeName: episodeName,
             progress: progress,
-            duration: duration
+            duration: duration,
+            tmdb: tmdbRef
         )
         storageManager.savePlayProgress(StorageManager.PlayProgressItem(
             vodId: vodInfo.vodId,

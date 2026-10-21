@@ -3,7 +3,7 @@ import SwiftUI
 /// 影视资料设置：从 TMDB 补全详情页的背景图、分集、演员等
 struct MetadataSettingsView: View {
     @State private var isEnabled = TMDBSettings.isEnabled
-    @State private var apiKey = TMDBSettings.apiKey
+    @State private var apiKey = TMDBSettings.customApiKey
     @State private var proxy = TMDBSettings.proxy
     @State private var language = TMDBSettings.language
     @State private var testState: TestState = .idle
@@ -23,8 +23,8 @@ struct MetadataSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Toggle("从 TMDB 补全资料", isOn: $isEnabled)
-                TextField("API Key", text: $apiKey)
+                Toggle("搜索和详情使用 TMDB", isOn: $isEnabled)
+                TextField("API Key（留空用内置 Key）", text: $apiKey)
                     .tvboxUrlTextInputStyle()
                 TextField("代理地址（可选）", text: $proxy)
                     .tvboxUrlTextInputStyle()
@@ -36,7 +36,7 @@ struct MetadataSettingsView: View {
             } header: {
                 Text("TMDB")
             } footer: {
-                Text("API Key 在 themoviedb.org → 设置 → API 免费申请，v3 Key 和 v4 读取令牌都可以。国内直连不稳定时填代理地址，代理需要把 /3/ 转发到 api.tmdb.org、/t/p/ 转发到 image.tmdb.org。")
+                Text("开启后搜索结果和详情页以 TMDB 作品为主，播放线路在后台从各站点查找。已内置 API Key，也可以换成自己在 themoviedb.org → 设置 → API 申请的，v3 Key 和 v4 读取令牌都可以。国内直连不稳定时填代理地址，代理需要把 /3/ 转发到 api.tmdb.org、/t/p/ 转发到 image.tmdb.org。")
             }
 
             Section {
@@ -48,7 +48,7 @@ struct MetadataSettingsView: View {
                     }
                 }
                 .tvboxFormRowButtonStyle()
-                .disabled(apiKey.isEmpty || testState == .testing)
+                .disabled(testState == .testing)
 
                 Button(role: .destructive, action: { showClearAlert = true }) {
                     HStack {
@@ -92,7 +92,7 @@ struct MetadataSettingsView: View {
         .tvboxInlineNavigationBarTitle()
         .onChange(of: isEnabled) { _, value in TMDBSettings.isEnabled = value }
         .onChange(of: apiKey) { _, value in
-            TMDBSettings.apiKey = value
+            TMDBSettings.customApiKey = value
             testState = .idle
         }
         .onChange(of: proxy) { _, value in

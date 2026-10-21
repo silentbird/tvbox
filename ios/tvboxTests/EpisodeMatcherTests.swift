@@ -96,9 +96,9 @@ struct EpisodeMatcherTests {
 
     private static func metadata(episodes: [VodMetadata.Episode], specials: [VodMetadata.Episode] = []) -> VodMetadata {
         VodMetadata(
-            tmdbID: 1, mediaType: .tv, title: "", overview: nil, backdropPath: nil, logoPath: nil, rating: nil,
+            tmdbID: 1, mediaType: .tv, title: "", originalTitle: nil, overview: nil, backdropPath: nil, logoPath: nil, rating: nil,
             certification: nil, genres: [], releaseDate: nil, runtime: nil, episodeCount: episodes.count,
-            episodes: episodes, specials: specials, cast: []
+            episodes: episodes, specials: specials, cast: [], seasons: [], season: 1
         )
     }
 
