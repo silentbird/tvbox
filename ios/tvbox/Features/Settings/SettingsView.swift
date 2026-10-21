@@ -540,7 +540,7 @@ struct AboutView: View {
                     .fontWeight(.bold)
                 
                 // Version
-                Text("版本 1.0.0")
+                Text("版本 \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                 
