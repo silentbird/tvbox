@@ -48,12 +48,25 @@ struct CollectView: View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: 12) {
                 ForEach(viewModel.collectItems) { item in
-                    CollectItemCard(item: item) {
-                        viewModel.removeCollect(item)
+                    NavigationLink(destination: destination(for: item)) {
+                        CollectItemCard(item: item) {
+                            viewModel.removeCollect(item)
+                        }
                     }
+                    .buttonStyle(.plain)
                 }
             }
             .padding()
+        }
+    }
+
+    /// 和 Android 一样：站点还在就进详情，否则按片名快速搜索
+    @ViewBuilder
+    private func destination(for item: StorageManager.VodCollectItem) -> some View {
+        if ApiConfig.shared.sites.contains(where: { $0.key == item.siteKey }) {
+            DetailView(movie: MovieItem(vodId: item.vodId, vodName: item.vodName, vodPic: item.vodPic, sourceKey: item.siteKey))
+        } else {
+            FastSearchView(keyword: item.vodName)
         }
     }
 }
