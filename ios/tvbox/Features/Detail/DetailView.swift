@@ -32,8 +32,12 @@ struct DetailView: View {
     var body: some View {
         Group {
             if movie.vodId.hasPrefix("msearch:") {
-                // 豆瓣等推荐站点的卡片没有详情，和 Android 一样按片名跳转快速搜索
-                FastSearchView(keyword: movie.vodName)
+                // 豆瓣等推荐站点的卡片没有详情，和 Android 一样按片名搜索；开启 TMDB 时先搜 TMDB
+                if TMDBSettings.isConfigured {
+                    TMDBSearchView(keyword: movie.vodName)
+                } else {
+                    FastSearchView(keyword: movie.vodName)
+                }
             } else if isCatNodeConfigCenterMovie {
                 CatNodeConfigCenterView()
                     .tvboxInlineNavigationBarTitle()
