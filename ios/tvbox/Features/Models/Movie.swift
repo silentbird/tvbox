@@ -164,6 +164,10 @@ struct VodInfo: Decodable, Identifiable {
     let vodContent: String?
     let vodRemarks: String?
     let typeName: String?
+    /// 苹果 CMS 站点常带的横版图
+    var vodPicSlide: String?
+    /// 站点给的评分，优先豆瓣分，0 视为没有
+    var vodScore: Double?
     
     /// 播放源列表
     var playFlags: [String] = []
@@ -190,6 +194,9 @@ struct VodInfo: Decodable, Identifiable {
         case typeName = "type_name"
         case vodPlayFrom = "vod_play_from"
         case vodPlayUrl = "vod_play_url"
+        case vodPicSlide = "vod_pic_slide"
+        case vodDoubanScore = "vod_douban_score"
+        case vodScore = "vod_score"
     }
     
     init(from decoder: Decoder) throws {
@@ -211,6 +218,13 @@ struct VodInfo: Decodable, Identifiable {
         vodContent = try container.decodeIfPresent(String.self, forKey: .vodContent)
         vodRemarks = try container.decodeIfPresent(String.self, forKey: .vodRemarks)
         typeName = try container.decodeIfPresent(String.self, forKey: .typeName)
+        vodPicSlide = (try? container.decodeIfPresent(String.self, forKey: .vodPicSlide)).flatMap { $0.isEmpty ? nil : $0 }
+        // 评分可能是数字也可能是字符串
+        vodScore = [CodingKeys.vodDoubanScore, .vodScore].lazy.compactMap { key -> Double? in
+            let value = (try? container.decodeIfPresent(Double.self, forKey: key))
+                ?? (try? container.decodeIfPresent(String.self, forKey: key)).flatMap { Double($0) }
+            return value.flatMap { $0 > 0 ? $0 : nil }
+        }.first
         
         // 解析播放源和地址
         let playFrom = try container.decodeIfPresent(String.self, forKey: .vodPlayFrom) ?? ""

@@ -64,6 +64,19 @@ extension View {
         #endif
     }
 
+    /// 详情页大图顶到导航栏下面：导航栏透明，返回按钮用浅色。macOS 的窗口工具栏不透明，保持原样
+    @ViewBuilder
+    func tvboxContentUnderNavigationBar() -> some View {
+        #if os(iOS) && !targetEnvironment(macCatalyst)
+        self
+            .ignoresSafeArea(edges: .top)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+        #else
+        self
+        #endif
+    }
+
     @ViewBuilder
     func tvboxStatusBar(hidden: Bool) -> some View {
         #if os(iOS) && !targetEnvironment(macCatalyst)

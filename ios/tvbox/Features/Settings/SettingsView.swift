@@ -192,6 +192,11 @@ struct SettingsView: View {
             Toggle(isOn: $viewModel.autoPlayNext) {
                 Label("自动下一集", systemImage: "forward.end")
             }
+
+            // 影视资料
+            NavigationLink(destination: MetadataSettingsView()) {
+                Label("影视资料", systemImage: "film.stack")
+            }
         } header: {
             Text("播放设置")
         }

@@ -1,12 +1,23 @@
 import Foundation
 import SwiftUI
 
-struct CachedAsyncImage: View {
+/// 泛型类型不能有静态存储属性，缓存放在外面
+private enum CachedImageStore {
+    nonisolated(unsafe) static let cache = NSCache<NSString, TVBoxPlatformImage>()
+}
+
+struct CachedAsyncImage<Placeholder: View>: View {
     let urlString: String?
+    var contentMode: ContentMode = .fill
+    var placeholder: () -> Placeholder
     @State private var image: TVBoxPlatformImage?
     @State private var isLoading = false
 
-    private static var imageCache = NSCache<NSString, TVBoxPlatformImage>()
+    init(urlString: String?, contentMode: ContentMode = .fill, @ViewBuilder placeholder: @escaping () -> Placeholder) {
+        self.urlString = urlString
+        self.contentMode = contentMode
+        self.placeholder = placeholder
+    }
 
     var body: some View {
         Group {
@@ -14,14 +25,14 @@ struct CachedAsyncImage: View {
                 #if canImport(UIKit)
                 Image(uiImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
+                    .aspectRatio(contentMode: contentMode)
                 #elseif canImport(AppKit)
                 Image(nsImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
+                    .aspectRatio(contentMode: contentMode)
                 #endif
             } else {
-                placeholderView
+                placeholder()
                     .onAppear {
                         loadImage()
                     }
@@ -29,19 +40,11 @@ struct CachedAsyncImage: View {
         }
     }
 
-    private var placeholderView: some View {
-        LinearGradient(
-            colors: [Color.blue.opacity(0.3), Color.purple.opacity(0.3)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
     private func loadImage() {
         guard let urlString = urlString, !urlString.isEmpty else { return }
         guard !isLoading else { return }
 
-        if let cached = Self.imageCache.object(forKey: urlString as NSString) {
+        if let cached = CachedImageStore.cache.object(forKey: urlString as NSString) {
             self.image = cached
             return
         }
@@ -64,7 +67,7 @@ struct CachedAsyncImage: View {
             do {
                 let (data, _) = try await URLSession.shared.data(for: request)
                 if let platformImage = TVBoxPlatformImage(data: data) {
-                    Self.imageCache.setObject(platformImage, forKey: urlString as NSString)
+                    CachedImageStore.cache.setObject(platformImage, forKey: urlString as NSString)
                     await MainActor.run {
                         self.image = platformImage
                         self.isLoading = false
@@ -80,6 +83,18 @@ struct CachedAsyncImage: View {
                     self.isLoading = false
                 }
             }
+        }
+    }
+}
+
+extension CachedAsyncImage where Placeholder == LinearGradient {
+    init(urlString: String?, contentMode: ContentMode = .fill) {
+        self.init(urlString: urlString, contentMode: contentMode) {
+            LinearGradient(
+                colors: [Color.blue.opacity(0.3), Color.purple.opacity(0.3)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
         }
     }
 }
