@@ -325,6 +325,7 @@
 - ✅ Mac 启动时配置解析不阻塞主线程。
 - ✅ 设置页、弹窗在 Mac/iPad 上不再分栏显示；原生 macOS 播放器窗口尺寸修复。
 - ✅ 宽窗口布局（`Platform/WideLayout.swift`，窗口宽 ≥ 900 且不是 iPhone 时启用）: 侧边栏代替底部 Tab；首页分类原地切换；详情左海报右信息；快速搜索左栏站点；搜索左栏输入/热词、右边多列结果；历史多列卡片加右键删除。对照 Android `activity_home`/`activity_detail`/`activity_fast_search`/`activity_search`/`activity_history`。
+- ✅ 原生 macOS 26 播放器顶部/底部控制条和弹出菜单使用 Liquid Glass，旧系统保留毛玻璃材质回退。
 
 待办:
 - [x] Mac 主线确定为原生 macOS（2026-10-22）；Catalyst 保留为兼容目标，不作为优先验收。

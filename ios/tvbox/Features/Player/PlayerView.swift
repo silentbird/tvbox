@@ -294,6 +294,9 @@ struct PlayerView: View {
             #endif
         }
         #if os(macOS)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .tvboxGlass(in: RoundedRectangle(cornerRadius: 14))
         .onHover { isHoveringControls = $0 }
         #endif
     }
@@ -965,6 +968,8 @@ extension PlayerView {
             }
         }
         .onHover { isHoveringControls = $0 }
+        .padding(10)
+        .tvboxGlass(in: RoundedRectangle(cornerRadius: 16))
     }
 
     private var volumeIcon: String {
@@ -1069,14 +1074,23 @@ extension PlayerView {
     }
 
     private func macMenuPanel<Content: View>(width: CGFloat, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let shape = RoundedRectangle(cornerRadius: 12)
+        let panel = VStack(alignment: .leading, spacing: 0) {
             content()
         }
         .padding(6)
         .frame(width: width)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.1)))
-        .shadow(color: .black.opacity(0.4), radius: 16, y: 6)
+
+        return Group {
+            if #available(macOS 26.0, *) {
+                panel.glassEffect(.regular, in: shape)
+            } else {
+                panel
+                    .background(.ultraThinMaterial, in: shape)
+                    .overlay(shape.stroke(Color.white.opacity(0.1)))
+                    .shadow(color: .black.opacity(0.4), radius: 16, y: 6)
+            }
+        }
         .environment(\.colorScheme, .dark)
         .fixedSize(horizontal: false, vertical: true)
         .transition(.opacity)
