@@ -248,7 +248,7 @@ final class PlayerViewModel: ObservableObject {
     // MARK: - 自动播放下一集
 
     private func startUpNext() {
-        guard hasNext, upNextCountdown == nil, !didCancelUpNext else { return }
+        guard PlaybackSettings.autoPlayNext, hasNext, upNextCountdown == nil, !didCancelUpNext else { return }
         upNextCountdown = Self.upNextSeconds
         upNextTask = Task {
             while let countdown = upNextCountdown, countdown > 0 {

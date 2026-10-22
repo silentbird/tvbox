@@ -61,41 +61,33 @@ struct MainView: View {
     
     // MARK: - Main Tab View
     private var mainTabView: some View {
-        ZStack(alignment: .bottom) {
-            selectedTabContent
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.tvboxBackground.ignoresSafeArea())
-                .safeAreaInset(edge: .bottom) {
-                    Color.clear.frame(height: 86)
-                }
-            
-            FloatingTabBar(selectedTab: $selectedTab)
-                .padding(.horizontal, 18)
-                .padding(.bottom, 12)
-        }
-        .ignoresSafeArea(.keyboard, edges: .bottom)
-    }
-    
-    @ViewBuilder
-    private var selectedTabContent: some View {
-        switch selectedTab {
-        case 0:
+        // iOS 26 原生底栏自带 Liquid Glass，选中玻璃块可以按住并跟手拖动
+        TabView(selection: $selectedTab) {
             NavigationStack {
                 HomeContentView()
             }
-        case 1:
+            .tabItem { Label("首页", systemImage: "house.fill") }
+            .tag(0)
+
             NavigationStack {
                 LiveView()
             }
-        case 2:
+            .tabItem { Label("直播", systemImage: "play.tv.fill") }
+            .tag(1)
+
             NavigationStack {
                 SearchView()
             }
-        default:
+            .tabItem { Label("搜索", systemImage: "magnifyingglass") }
+            .tag(2)
+
             NavigationStack {
                 MineView()
             }
+            .tabItem { Label("我的", systemImage: "person.fill") }
+            .tag(3)
         }
+        .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 
     // MARK: - Sidebar View

@@ -64,6 +64,9 @@ patch_ksplayer() {
     sed -i '' 's/^    #if canImport(AppKit)$/    #if canImport(AppKit) \&\& !targetEnvironment(macCatalyst)/' \
         "$VENDOR_DIR/KSPlayer/Sources/KSPlayer/Video/SeekView.swift"
 
+    # FFmpegKit 要求 Mac Catalyst 14.0，KSPlayer 原清单仍声明 13.1。
+    sed -i '' 's/\.macCatalyst(\.v13)/.macCatalyst(.v14)/' "$VENDOR_DIR/KSPlayer/Package.swift"
+
     # 原清单用 FileManager 判断 ../FFmpegKit 是否存在，Xcode 解析清单时有沙盒，判断失败就去 GitHub 克隆 FFmpegKit。
     # 把这段判断换成固定的本地依赖。
     manifest="$VENDOR_DIR/KSPlayer/Package.swift"

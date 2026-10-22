@@ -4,9 +4,9 @@ This directory contains the SwiftUI port of the Android TVBox app.
 
 ## Current Direction
 
-- iOS is the primary target.
-- macOS should be validated first through Mac Catalyst.
-- Native macOS/AppKit should wait until the iOS core flow is stable.
+- iOS is the primary mobile target.
+- Native macOS is the primary Mac target; build and validate the native `My Mac` destination.
+- Mac Catalyst remains available as a compatibility target, but is not the Mac development priority.
 - Playback should use AVPlayer first. Android-only players such as IJK, Exo, AliyunPlayer, MXPlayer, and Kodi are not direct migration targets.
 
 ## Requirements

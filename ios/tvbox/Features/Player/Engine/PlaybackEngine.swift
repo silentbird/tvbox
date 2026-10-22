@@ -131,8 +131,17 @@ protocol PlaybackEngine: AnyObject {
     func stop()
 }
 
-/// 设置里可选的播放器，对应 Android 的 PLAY_TYPE
-enum PlayerKind: Int, CaseIterable, Identifiable {
+enum PlaybackSettings {
+    private static let autoPlayNextKey = "auto_play_next"
+
+    static var autoPlayNext: Bool {
+        get { UserDefaults.standard.object(forKey: autoPlayNextKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: autoPlayNextKey) }
+    }
+}
+
+/// 播放内核类型，对应 Android 的 PLAY_TYPE
+enum PlayerKind: Int {
     // 0 以前是系统播放器 (AVPlayer)，1 是和它重复的 "AVPlayer" 选项，都已去掉
     case ksPlayer = 2
 
@@ -142,14 +151,6 @@ enum PlayerKind: Int, CaseIterable, Identifiable {
     static var selected: PlayerKind {
         get { PlayerKind(rawValue: UserDefaults.standard.integer(forKey: storageKey)) ?? .ksPlayer }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: storageKey) }
-    }
-
-    var id: Int { rawValue }
-
-    var name: String {
-        switch self {
-        case .ksPlayer: return "KSPlayer"
-        }
     }
 
     @MainActor

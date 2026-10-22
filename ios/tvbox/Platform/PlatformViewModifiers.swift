@@ -136,6 +136,38 @@ extension View {
     }
 }
 
+@MainActor
+enum PlayerOrientation {
+    /// 点播、直播在 iPhone 上都锁定横屏；iPad 和 Mac 不改变窗口方向
+    static func enter() {
+        #if os(iOS) && !targetEnvironment(macCatalyst)
+        guard UIDevice.current.userInterfaceIdiom == .phone else { return }
+        AppDelegate.playerOrientationMask = .landscape
+        request(.landscape)
+        #endif
+    }
+
+    static func leave() {
+        #if os(iOS) && !targetEnvironment(macCatalyst)
+        guard UIDevice.current.userInterfaceIdiom == .phone else { return }
+        AppDelegate.playerOrientationMask = nil
+        request(.portrait)
+        #endif
+    }
+
+    #if os(iOS) && !targetEnvironment(macCatalyst)
+    private static func request(_ orientations: UIInterfaceOrientationMask) {
+        guard let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive }) else { return }
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: orientations)) { error in
+            AppLogger.debug("切换屏幕方向失败: \(error.localizedDescription)")
+        }
+        scene.windows.first?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+    }
+    #endif
+}
+
 #if os(iOS)
 /// 借 UIKit 的 viewDidAppear 判断转场结束
 private struct DidAppearHook: UIViewControllerRepresentable {

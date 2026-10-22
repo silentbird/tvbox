@@ -91,6 +91,7 @@ struct LiveView: View {
                         )
                         .onTapGesture {
                             selectedChannel = channel
+                            PlayerOrientation.enter()
                             playingChannel = channel
                         }
                     }
@@ -307,11 +308,13 @@ struct LivePlayerView: View {
         }
         .tvboxStatusBar(hidden: true)
         .onAppear {
+            PlayerOrientation.enter()
             if !channel.channelUrls.isEmpty {
                 viewModel.loadChannel(url: channel.channelUrls[currentSourceIndex], headers: channel.headers)
             }
         }
         .onDisappear {
+            PlayerOrientation.leave()
             viewModel.cleanup()
         }
     }

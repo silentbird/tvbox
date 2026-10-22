@@ -164,30 +164,6 @@ struct SettingsView: View {
     // MARK: - Playback Section
     private var playbackSection: some View {
         Section {
-            // 播放器类型
-            Picker(selection: $viewModel.playerKind) {
-                ForEach(PlayerKind.allCases) { kind in
-                    Text(kind.name).tag(kind)
-                }
-            } label: {
-                Label("播放器", systemImage: "play.rectangle")
-            }
-            
-            // 默认画质
-            Picker(selection: $viewModel.defaultQuality) {
-                Text("自动").tag(0)
-                Text("1080P").tag(1)
-                Text("720P").tag(2)
-                Text("480P").tag(3)
-            } label: {
-                Label("默认画质", systemImage: "slider.horizontal.3")
-            }
-            
-            // 后台播放
-            Toggle(isOn: $viewModel.backgroundPlay) {
-                Label("后台播放", systemImage: "speaker.wave.2")
-            }
-            
             // 自动下一集
             Toggle(isOn: $viewModel.autoPlayNext) {
                 Label("自动下一集", systemImage: "forward.end")
@@ -584,13 +560,10 @@ class SettingsViewModel: ObservableObject {
     @Published var defaultParseName: String = "未选择"
     @Published var isRefreshing = false
     
-    @Published var playerKind = PlayerKind.selected {
-        didSet { PlayerKind.selected = playerKind }
+    @Published var autoPlayNext = PlaybackSettings.autoPlayNext {
+        didSet { PlaybackSettings.autoPlayNext = autoPlayNext }
     }
-    @Published var defaultQuality: Int = 0
-    @Published var backgroundPlay: Bool = false
-    @Published var autoPlayNext: Bool = true
-    
+
     @Published var historyCount: Int = 0
     @Published var collectCount: Int = 0
     @Published var cacheSize: String = "0 MB"
@@ -601,8 +574,7 @@ class SettingsViewModel: ObservableObject {
     
     private let apiConfig = ApiConfig.shared
     private let storageManager = StorageManager.shared
-    private let userDefaults = UserDefaults.standard
-    
+
     init() {
         loadSettings()
     }
@@ -617,11 +589,6 @@ class SettingsViewModel: ObservableObject {
         historyCount = storageManager.getVodHistory().count
         collectCount = storageManager.getCollects().count
         calculateCacheSize()
-        
-        // 播放设置
-        defaultQuality = userDefaults.integer(forKey: "default_quality")
-        backgroundPlay = userDefaults.bool(forKey: "background_play")
-        autoPlayNext = userDefaults.object(forKey: "auto_play_next") as? Bool ?? true
     }
     
     func updateApiUrl(_ url: String) {

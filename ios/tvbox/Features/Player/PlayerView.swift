@@ -195,6 +195,7 @@ struct PlayerView: View {
         .focusEffectDisabled()
         .onKeyPress(action: handleKeyPress)
         .onAppear {
+            PlayerOrientation.enter()
             viewModel.start(
                 sources: sources,
                 sourceIndex: sourceIndex,
@@ -211,6 +212,7 @@ struct PlayerView: View {
             scheduleHideControls()
         }
         .onDisappear {
+            PlayerOrientation.leave()
             hideControlsTask?.cancel()
             viewModel.cleanup()
         }

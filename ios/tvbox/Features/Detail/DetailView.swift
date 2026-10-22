@@ -204,6 +204,7 @@ struct DetailView: View {
         .tvboxOnDidAppear {
             if let resume, !didAutoPlay, resume.playableSite != nil, let episodes = resume.episodes {
                 didAutoPlay = true
+                PlayerOrientation.enter()
                 playRequest = PlayRequest(
                     sourceIndex: 0,
                     episodeIndex: episodes.indices.contains(resume.episodeIndex) ? resume.episodeIndex : 0,
@@ -1192,6 +1193,7 @@ struct DetailView: View {
     }
 
     private func play(episodeIndex: Int) {
+        PlayerOrientation.enter()
         viewModel.willPlay()
         playRequest = PlayRequest(sourceIndex: selectedSourceIndex, episodeIndex: episodeIndex)
     }
